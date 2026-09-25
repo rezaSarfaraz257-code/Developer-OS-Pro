@@ -20,4 +20,4 @@ USER appuser
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn x.wsgi:application --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 60"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn x.wsgi:application --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 120"]
