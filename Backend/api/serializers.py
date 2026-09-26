@@ -10,7 +10,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .models import Favorite, Resource, Tool, UserProfile, Workflow, Project
 from .models import Tag, Task, Note, Activity
-from .models import Snippet
+from .models import Snippet, ProjectInvite
 from .models import GitHubAccount, Organization, OrganizationMembership, Notification, Comment, TaskDependency, CodeWorkspace, AIConversation, AIMessage, Subscription, APIKey
 
 
