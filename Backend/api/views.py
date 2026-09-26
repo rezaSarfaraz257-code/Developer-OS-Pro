@@ -1598,7 +1598,9 @@ def _workspace_context(user, project_id=None):
     project_rows = list(projects.order_by("-updated_at" if hasattr(Project, "updated_at") else "-created_at").values(
         "id", "title", "description", "status", "priority", "category", "deadline", "repository_url", "stack"
     )[:20])
-    project_ids = [p["id"] for p in project_rows]
+    for p in project_rows:
+    if p.get("deadline"):
+        p["deadline"] = p["deadline"].isoformat()
     tasks = Task.objects.filter(project_id__in=project_ids).select_related("project", "assignee").order_by("status", "priority", "due_date")[:80]
     notes = Note.objects.filter(project_id__in=project_ids).order_by("-updated_at")[:40]
     snippets = Snippet.objects.filter(Q(author=user) | Q(project_id__in=project_ids)).order_by("-updated_at")[:40]
