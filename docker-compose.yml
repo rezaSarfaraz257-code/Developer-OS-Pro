@@ -36,7 +36,10 @@ services:
       IDE_RUNNER_URL: ${IDE_RUNNER_URL:-http://runner:8080}
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
     healthcheck:
-      test: ["CMD-SHELL", "python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=3)' >/dev/null 2>&1"]
+      test:
+        - CMD-SHELL
+        - >-
+          python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=3)' >/dev/null 2>&1
       interval: 15s
       timeout: 5s
       retries: 5
