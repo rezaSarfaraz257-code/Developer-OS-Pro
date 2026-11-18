@@ -53,9 +53,14 @@ services:
 
   runner:
     restart: unless-stopped
+    init: true
+    read_only: true
     build: ./Runner
     environment:
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
+      PYTHONDONTWRITEBYTECODE: "1"
+    tmpfs:
+      - /tmp:rw,nosuid,size=128m
     volumes:
       - ide_workspaces:/workspaces
     expose:
