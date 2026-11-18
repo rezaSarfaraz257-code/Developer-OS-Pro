@@ -36,8 +36,15 @@ def auth(value):
 def safe_workspace(workspace_id):
     if not re.fullmatch(r"[0-9]+", str(workspace_id)):
         raise HTTPException(status_code=400, detail="Invalid workspace id")
-    p = ROOT / str(workspace_id)
+    ROOT.mkdir(parents=True, exist_ok=True)
+    base = ROOT.resolve()
+    p = (base / str(workspace_id)).resolve()
+    if not p.is_relative_to(base) or p == base:
+        raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
     p.mkdir(parents=True, exist_ok=True)
+    p = p.resolve()
+    if not p.is_relative_to(base) or p == base:
+        raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
     return p
 
 def safe_rel(path):
@@ -46,7 +53,15 @@ def safe_rel(path):
         raise ValueError("unsafe path")
     return path
 
+def _assert_inside_root(root, candidate):
+    base = root.resolve()
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(base) or resolved == base:
+        raise ValueError("workspace path escapes the workspace root")
+    return resolved
+
 def write_snapshot(root, files):
+    root = root.resolve()
     if len(files) > MAX_FILES:
         raise ValueError(f"workspace exceeds {MAX_FILES} files")
     total = 0
@@ -57,63 +72,99 @@ def write_snapshot(root, files):
         total += len(content.encode())
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
-        target = root / rel
+        target = _assert_inside_root(root, root / rel)
         target.parent.mkdir(parents=True, exist_ok=True)
+        target = _assert_inside_root(root, target)
         target.write_text(content, encoding="utf-8")
 
 def snapshot(root):
     out = {}
+    root = root.resolve()
     skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache"}
     for p in root.rglob("*"):
-        if not p.is_file() or any(part in skip for part in p.relative_to(root).parts):
+        if p.is_symlink() or not p.is_file() or any(part in skip for part in p.relative_to(root).parts):
             continue
         try:
+            _assert_inside_root(root, p)
             if p.stat().st_size > MAX_FILE:
                 continue
             data = p.read_bytes()
             if b"\x00" in data:
                 continue
             out[str(p.relative_to(root)).replace(os.sep, "/")] = data.decode("utf-8")
-        except Exception:
+        except (OSError, ValueError):
             continue
     return out
+
+def _bounded_output(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return value[-MAX_OUTPUT:]
 
 def run_command(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
+    root = root.resolve()
+    home = root / ".home"
+    temp = root / ".tmp"
+    home.mkdir(exist_ok=True)
+    temp.mkdir(exist_ok=True)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "HOME": str(root / ".home"),
+        "HOME": str(home),
+        "TMPDIR": str(temp),
         "npm_config_cache": str(root / ".npm-cache"),
         "PIP_CACHE_DIR": str(root / ".pip-cache"),
         "PYTHONUNBUFFERED": "1",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "CI": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
     }
-    (root / ".home").mkdir(exist_ok=True)
     started = time.monotonic()
+    proc = None
     try:
-        proc = subprocess.run(
-            ["bash", "-lc", command], cwd=root, env=env,
-            capture_output=True, text=True, timeout=TIMEOUT,
+        proc = subprocess.Popen(
+            ["bash", "-c", command],
+            cwd=root,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             start_new_session=True,
+            close_fds=True,
         )
+        stdout, stderr = proc.communicate(timeout=TIMEOUT)
         return {
             "exit_code": proc.returncode,
-            "stdout": proc.stdout[-MAX_OUTPUT:],
-            "stderr": proc.stderr[-MAX_OUTPUT:],
+            "stdout": _bounded_output(stdout),
+            "stderr": _bounded_output(stderr),
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
         }
     except subprocess.TimeoutExpired as exc:
-        # Kill the entire process group so timed-out dev servers/child processes
-        # cannot survive the request and consume the shared runner.
-        try:
-            os.killpg(proc.pid if "proc" in locals() else 0, signal.SIGKILL)
-        except Exception:
-            pass
+        if proc is not None and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                proc.kill()
+        stdout, stderr = ("", "")
+        if proc is not None:
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
         return {
             "exit_code": 124,
-            "stdout": (exc.stdout or "")[-MAX_OUTPUT:] if isinstance(exc.stdout, str) else "",
-            "stderr": "Execution timed out after 120 seconds.",
+            "stdout": _bounded_output(stdout if stdout else exc.stdout),
+            "stderr": _bounded_output(stderr if stderr else exc.stderr) or f"Execution timed out after {TIMEOUT} seconds.",
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
         }
