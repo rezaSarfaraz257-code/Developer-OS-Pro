@@ -86,8 +86,9 @@ test("getEngineeringInsights derives overdue, unassigned and capacity counts fro
     { id: 2, status: "todo", due_date: "2026-11-19", assignee: 7 },
     { id: 3, status: "done", due_date: "2026-11-01", assignee: null },
     { id: 4, status: "blocked", due_date: "not-a-date", assignee: "" },
-    { id: 5, status: "todo", due_date: "2026-02-30", assignee: 8 },
-    { id: 6, status: "todo", due_date: "2024-02-29", assignee: 8 },
+    { id: 5, status: "todo", assignee: 8 },
+    { id: 6, status: "todo", due_date: "2026-02-30", assignee: 8 },
+    { id: 7, status: "todo", due_date: "2024-02-29", assignee: 8 },
   ];
   const projects = [
     { id: 10, status: "In Progress" },
@@ -98,7 +99,7 @@ test("getEngineeringInsights derives overdue, unassigned and capacity counts fro
   const workspaces = [{ id: 1 }, { id: 2 }, { name: "missing id" }];
 
   assert.deepEqual(getEngineeringInsights(records, projects, workspaces, now), {
-    overdue: 1,
+    overdue: 2,
     unassigned: 3,
     activeProjects: 2,
     configuredWorkspaces: 2,
