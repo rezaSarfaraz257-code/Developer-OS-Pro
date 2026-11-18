@@ -1,4 +1,4 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -14,8 +14,11 @@ TIMEOUT = 120
 
 # Serialize operations per workspace. A sync must never replace files while a
 # command is executing against the same working directory.
-_WORKSPACE_LOCKS = {}
+_WORKSPACE_LOCKS = weakref.WeakValueDictionary()
 _WORKSPACE_LOCKS_GUARD = threading.Lock()
+MAX_CONCURRENT_EXECUTIONS = 4
+EXECUTION_SLOT_WAIT_SECONDS = 5
+EXECUTION_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_EXECUTIONS)
 
 def workspace_lock(workspace_id):
     key = str(workspace_id)
@@ -142,7 +145,7 @@ def _kill_process_group(proc):
         except OSError:
             pass
 
-def run_command(root, command):
+def _run_command_with_slot(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
     root = root.resolve()
@@ -211,6 +214,18 @@ def run_command(root, command):
             _kill_process_group(proc)
             proc.wait()
         raise
+
+def run_command(root, command):
+    if not EXECUTION_SLOTS.acquire(timeout=EXECUTION_SLOT_WAIT_SECONDS):
+        raise HTTPException(
+            status_code=429,
+            detail="Runner is at its concurrent execution limit. Retry shortly.",
+            headers={"Retry-After": str(EXECUTION_SLOT_WAIT_SECONDS)},
+        )
+    try:
+        return _run_command_with_slot(root, command)
+    finally:
+        EXECUTION_SLOTS.release()
 
 @app.get("/health")
 def health():

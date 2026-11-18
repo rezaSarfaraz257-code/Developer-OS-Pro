@@ -80,6 +80,16 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertIs(first, second)
         self.assertIsNot(first, other)
 
+    def test_execution_limit_returns_retryable_429(self):
+        with patch.object(main, "EXECUTION_SLOTS", __import__("threading").BoundedSemaphore(0)):
+            with patch.object(main, "_run_command_with_slot") as execute:
+                with patch.object(main, "EXECUTION_SLOT_WAIT_SECONDS", 0.01):
+                    with self.assertRaises(HTTPException) as error:
+                        main.run_command(self.root, "echo blocked")
+        self.assertEqual(error.exception.status_code, 429)
+        self.assertEqual(error.exception.headers["Retry-After"], "0.01")
+        execute.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
