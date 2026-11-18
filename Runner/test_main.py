@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -112,6 +113,24 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(status["NoNewPrivs"], "1")
         self.assertEqual(status["CapEff"], "0000000000000000")
         self.assertEqual(status["CapBnd"], "0000000000000000")
+
+    def test_command_cannot_read_runner_parent_environment(self):
+        workspace = self.root / "16"
+        workspace.mkdir()
+        parent_pid = os.getpid()
+        command = f"if cat /proc/{parent_pid}/environ >/dev/null 2>&1; then echo readable; else echo protected; fi"
+        result = main.run_command(workspace, command)
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertEqual(result["stdout"].strip(), "protected")
+
+    def test_command_cannot_access_another_workspace(self):
+        with patch.object(main, "ROOT", self.root):
+            first = main.safe_workspace("31")
+            second = main.safe_workspace("32")
+        (second / "secret.txt").write_text("private workspace data", encoding="utf-8")
+        result = main.run_command(first, "cat ../32/secret.txt")
+        self.assertNotEqual(result["exit_code"], 0)
+        self.assertNotIn("private workspace data", result["stdout"])
 
     def test_workspace_is_private_and_writable_by_command_identity(self):
         workspace = self.root / "15"
