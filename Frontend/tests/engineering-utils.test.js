@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   filterEngineeringTasks,
   getTaskCounts,
+  getEngineeringInsights,
   isDependencyCandidate,
   normalizeApiList,
   taskStateLabel,
@@ -75,4 +76,44 @@ test("parseApiResponse reports invalid proxy/server responses clearly", async ()
     parseApiResponse(new Response("<html>Bad Gateway</html>", { status: 502 })),
     /invalid response \(HTTP 502\)/,
   );
+});
+
+
+test("getEngineeringInsights derives overdue, unassigned and capacity counts from API records", () => {
+  const now = new Date(2026, 10, 19, 12);
+  const records = [
+    { id: 1, status: "in_progress", due_date: "2026-11-18", assignee: null },
+    { id: 2, status: "todo", due_date: "2026-11-19", assignee: 7 },
+    { id: 3, status: "done", due_date: "2026-11-01", assignee: null },
+    { id: 4, status: "blocked", due_date: "not-a-date", assignee: "" },
+    { id: 5, status: "todo", assignee: 8 },
+  ];
+  const projects = [
+    { id: 10, status: "In Progress" },
+    { id: 11, status: "Planning" },
+    { id: 12, status: "Completed" },
+    { id: 13, status: "On Hold" },
+  ];
+  const workspaces = [{ id: 1 }, { id: 2 }, { name: "missing id" }];
+
+  assert.deepEqual(getEngineeringInsights(records, projects, workspaces, now), {
+    overdue: 1,
+    unassigned: 3,
+    activeProjects: 2,
+    configuredWorkspaces: 2,
+  });
+});
+
+test("getEngineeringInsights safely handles empty and paginated API payloads", () => {
+  assert.deepEqual(getEngineeringInsights(
+    { results: [] },
+    null,
+    { results: [{ id: 1 }] },
+    new Date(2026, 10, 19),
+  ), {
+    overdue: 0,
+    unassigned: 0,
+    activeProjects: 0,
+    configuredWorkspaces: 1,
+  });
 });
