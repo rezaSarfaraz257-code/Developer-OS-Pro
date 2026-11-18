@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import EngineeringControlCenter from "./features/engineering/EngineeringControlCenter.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, revokeRefreshToken } from "./services/api";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
+  ["engineering", "⌁", "Engineering OS"],
   ["projects", "◈", "Projects"],
   ["ide", "⌘", "Web IDE"],
   ["ai", "✦", "Intelligence"],
@@ -74,13 +76,13 @@ function Shell({ user, onLogout, children, go, current }) {
           <span className="brand-mark">D</span><span className="brand-text">DEVELOPER<span>OS</span></span>
         </button>
         <div className="rail-section">WORKSPACE</div>
-        {nav.slice(0, 6).map(([id, icon, label]) => (
+        {nav.slice(0, 7).map(([id, icon, label]) => (
           <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(id === "dashboard" ? "/" : `/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
         ))}
         <div className="rail-section">SYSTEM</div>
-        {nav.slice(6).map(([id, icon, label]) => (
+        {nav.slice(7).map(([id, icon, label]) => (
           <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(`/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
@@ -309,6 +311,7 @@ export default function App() {
   if(projectMatch) content=<ProjectDetail id={projectMatch[1]} go={go}/>;
   else if(current==="dashboard") content=<Dashboard go={go}/>;
   else if(current==="projects") content=<Projects go={go}/>;
+  else if(current==="engineering") content=<EngineeringControlCenter go={go}/>;
   else if(current==="ide") content=<IDE/>;
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;
