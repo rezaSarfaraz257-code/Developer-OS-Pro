@@ -55,6 +55,9 @@ export default function EngineeringControlCenter({ go }) {
   const [updatingTaskIds, setUpdatingTaskIds] = useState(() => new Set());
 
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  // Keep async dependency mutations scoped to the task selected when they began.
+  const selectedTaskIdRef = useRef(selectedTaskId);
+  selectedTaskIdRef.current = selectedTaskId;
   const [dependencies, setDependencies] = useState([]);
   const [dependencyTarget, setDependencyTarget] = useState("");
   const [dependencyBusy, setDependencyBusy] = useState(false);
@@ -256,16 +259,19 @@ export default function EngineeringControlCenter({ go }) {
 
   const addDependency = async (event) => {
     event.preventDefault();
-    if (!selectedTaskId || !dependencyTarget) return;
+    const taskId = selectedTaskId;
+    if (!taskId || !dependencyTarget || dependencyBusy) return;
     setDependencyBusy(true);
     setError("");
     try {
-      await apiJson(`/tasks/${selectedTaskId}/dependencies/`, {
+      await apiJson(`/tasks/${taskId}/dependencies/`, {
         method: "POST",
         body: JSON.stringify({ depends_on: Number(dependencyTarget) }),
       });
-      setDependencyTarget("");
-      await loadDependencies(selectedTaskId);
+      if (selectedTaskIdRef.current === taskId) {
+        setDependencyTarget("");
+        await loadDependencies(taskId);
+      }
     } catch (err) {
       setError(err.message || "Dependency could not be created.");
     } finally {
@@ -274,14 +280,18 @@ export default function EngineeringControlCenter({ go }) {
   };
 
   const removeDependency = async (dependencyId) => {
+    const taskId = selectedTaskId;
+    if (!taskId || dependencyBusy) return;
     setDependencyBusy(true);
     setError("");
     try {
-      await apiJson(`/tasks/${selectedTaskId}/dependencies/`, {
+      await apiJson(`/tasks/${taskId}/dependencies/`, {
         method: "DELETE",
         body: JSON.stringify({ dependency_id: dependencyId }),
       });
-      await loadDependencies(selectedTaskId);
+      if (selectedTaskIdRef.current === taskId) {
+        await loadDependencies(taskId);
+      }
     } catch (err) {
       setError(err.message || "Dependency could not be removed.");
     } finally {
