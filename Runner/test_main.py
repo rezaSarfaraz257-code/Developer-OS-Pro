@@ -90,6 +90,18 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(error.exception.headers["Retry-After"], "0.01")
         execute.assert_not_called()
 
+    def test_readiness_requires_runner_token(self):
+        with patch.object(main, "TOKEN", ""):
+            with patch.object(main, "ROOT", self.root):
+                with self.assertRaises(HTTPException) as error:
+                    main.runner_readiness()
+        self.assertEqual(error.exception.status_code, 503)
+
+    def test_readiness_checks_workspace_volume_write_access(self):
+        with patch.object(main, "TOKEN", "test-token"):
+            with patch.object(main, "ROOT", self.root):
+                self.assertEqual(main.runner_readiness(), {"status": "ready"})
+
 
 if __name__ == "__main__":
     unittest.main()

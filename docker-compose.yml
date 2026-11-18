@@ -76,7 +76,7 @@ services:
     mem_limit: 1g
     cpus: 2.0
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5

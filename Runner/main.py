@@ -1,4 +1,4 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading, weakref
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -229,7 +229,27 @@ def run_command(root, command):
 
 @app.get("/health")
 def health():
+    # Liveness only: the process is responsive.
     return {"status": "ok"}
+
+def runner_readiness():
+    if not TOKEN:
+        raise HTTPException(status_code=503, detail="Runner authentication is not configured")
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(ROOT).free < 64 * 1024 * 1024:
+            raise HTTPException(status_code=503, detail="Runner workspace storage is below the safety threshold")
+        with tempfile.NamedTemporaryFile(prefix=".runner-ready-", dir=ROOT):
+            pass
+    except HTTPException:
+        raise
+    except OSError:
+        raise HTTPException(status_code=503, detail="Runner workspace storage is not writable")
+    return {"status": "ready"}
+
+@app.get("/health/ready")
+def readiness():
+    return runner_readiness()
 
 @app.post("/sync")
 def sync(payload: Workspace, authorization: str = Header(default="")):
