@@ -81,19 +81,31 @@ def auth(value):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 def safe_workspace(workspace_id):
-    if not re.fullmatch(r"[0-9]+", str(workspace_id)):
+    # Workspace identifiers are database IDs, not arbitrary path fragments.
+    # Canonicalize them before deriving a filesystem path.
+    raw_id = str(workspace_id)
+    if not re.fullmatch(r"[1-9][0-9]{0,17}", raw_id):
         raise HTTPException(status_code=400, detail="Invalid workspace id")
+    canonical_id = str(int(raw_id))
     ROOT.mkdir(parents=True, exist_ok=True)
     base = ROOT.resolve()
-    p = (base / str(workspace_id)).resolve()
-    if not p.is_relative_to(base) or p == base:
-        raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
-    p.mkdir(parents=True, exist_ok=True)
-    p = p.resolve()
-    if not p.is_relative_to(base) or p == base:
-        raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
-    p.chmod(0o700)
-    return p
+    candidate = base / canonical_id
+    try:
+        # Reject a pre-existing symlink rather than resolving through it.
+        if candidate.is_symlink():
+            raise HTTPException(status_code=400, detail="Workspace path is not a real directory")
+        candidate.mkdir(mode=0o700, exist_ok=True)
+        p = candidate.resolve(strict=True)
+        if not p.is_relative_to(base) or p == base or p != candidate:
+            raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
+        if not p.is_dir():
+            raise HTTPException(status_code=400, detail="Workspace path is not a directory")
+        p.chmod(0o700)
+        return p
+    except HTTPException:
+        raise
+    except OSError:
+        raise HTTPException(status_code=400, detail="Workspace path is not available")
 
 def safe_rel(path):
     path = str(path).replace("\\", "/").lstrip("/")
