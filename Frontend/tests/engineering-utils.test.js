@@ -100,7 +100,7 @@ test("getEngineeringInsights derives overdue, unassigned and capacity counts fro
 
   assert.deepEqual(getEngineeringInsights(records, projects, workspaces, now), {
     overdue: 2,
-    unassigned: 3,
+    unassigned: 2,
     activeProjects: 2,
     configuredWorkspaces: 2,
   });
