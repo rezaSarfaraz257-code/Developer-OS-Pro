@@ -168,6 +168,21 @@ def _kill_process_group(proc):
         except OSError:
             pass
 
+def _terminate_remaining_process_group(proc):
+    if proc is None:
+        return False
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        _kill_process_group(proc)
+        return True
+    # The shell has exited. Any remaining member is an orphaned command child.
+    time.sleep(0.1)
+    _kill_process_group(proc)
+    return True
+
 def _run_command_with_slot(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
@@ -217,6 +232,8 @@ def _run_command_with_slot(root, command):
             timed_out = True
             _kill_process_group(proc)
             proc.wait()
+        if not timed_out and _terminate_remaining_process_group(proc):
+            orphaned_processes = True
         # Do not leave background children holding the output pipes open.
         for reader in readers:
             reader.join(timeout=1)

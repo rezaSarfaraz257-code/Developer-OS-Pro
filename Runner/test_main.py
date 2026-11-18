@@ -49,6 +49,16 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 124)
         self.assertIn("timed out", result["stderr"].lower())
 
+    def test_detached_background_child_is_terminated_after_shell_exit(self):
+        workspace = self.root / "13"
+        workspace.mkdir()
+        result = main.run_command(
+            workspace,
+            "sleep 5 >/dev/null 2>&1 & echo background-started",
+        )
+        self.assertEqual(result["exit_code"], 125)
+        self.assertIn("background child processes were terminated", result["stderr"].lower())
+
     def test_command_output_is_bounded_while_streaming(self):
         workspace = self.root / "10"
         workspace.mkdir()
