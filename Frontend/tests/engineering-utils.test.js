@@ -36,6 +36,10 @@ test("parseEngineeringDate preserves date-only calendar days and validates value
   assert.equal(dateOnly.getFullYear(), 2026);
   assert.equal(dateOnly.getMonth(), 10);
   assert.equal(dateOnly.getDate(), 19);
+  const earlyYear = parseEngineeringDate("0001-01-02");
+  assert.equal(earlyYear.getFullYear(), 1);
+  assert.equal(earlyYear.getMonth(), 0);
+  assert.equal(earlyYear.getDate(), 2);
   assert.equal(parseEngineeringDate("2026-02-30"), null);
   assert.equal(parseEngineeringDate("not-a-date"), null);
   assert.equal(parseEngineeringDate(null), null);
