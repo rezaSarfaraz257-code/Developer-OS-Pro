@@ -73,10 +73,14 @@ export function parseEngineeringDate(value) {
     return Number.isFinite(value.getTime()) ? new Date(value.getTime()) : null;
   }
   if (typeof value !== "string" || !value) return null;
-  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     if (!isValidDateOnly(value)) return null;
     const [year, month, day] = value.split("-").map(Number);
-    return new Date(year, month - 1, day);
+    // setFullYear avoids the Date constructor's special 1900 offset for years 0–99.
+    const localDate = new Date(0);
+    localDate.setHours(0, 0, 0, 0);
+    localDate.setFullYear(year, month - 1, day);
+    return localDate;
   }
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
