@@ -21,13 +21,13 @@ def command_argv(command):
     file_limit_blocks = MAX_COMMAND_FILE_BYTES // 512
     bootstrap = (
         "set -e; "
-        f"ulimit -H -t {MAX_COMMAND_CPU_SECONDS}; "
         f"ulimit -S -t {MAX_COMMAND_CPU_SECONDS}; "
-        f"ulimit -H -f {file_limit_blocks}; "
+        f"ulimit -H -t {MAX_COMMAND_CPU_SECONDS}; "
         f"ulimit -S -f {file_limit_blocks}; "
-        f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
+        f"ulimit -H -f {file_limit_blocks}; "
         f"ulimit -S -n {MAX_COMMAND_OPEN_FILES}; "
-        "ulimit -H -c 0; ulimit -S -c 0; "
+        f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
+        "ulimit -S -c 0; ulimit -H -c 0; "
         'exec bash -c "$1"'
     )
     return ["bash", "-c", bootstrap, "runner-command", command]
