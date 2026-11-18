@@ -95,6 +95,25 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(argv[-1], command)
         self.assertNotIn(command, argv[2])
 
+    def test_command_runs_as_unprivileged_identity_with_no_new_privileges(self):
+        workspace = self.root / "14"
+        workspace.mkdir()
+        command = "id -u; id -g; awk '/^NoNewPrivs:|^CapEff:|^CapBnd:/ {print $2}' /proc/self/status"
+        result = main.run_command(workspace, command)
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertEqual(result["stdout"].splitlines(), ["65534", "65534", "1", "0000000000000000", "0000000000000000"])
+
+    def test_workspace_is_private_and_writable_by_command_identity(self):
+        workspace = self.root / "15"
+        workspace.mkdir()
+        (workspace / "source.py").write_text("print('ok')", encoding="utf-8")
+        result = main.run_command(workspace, "echo generated > generated.txt && cat generated.txt")
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertEqual(result["stdout"].strip(), "generated")
+        self.assertEqual((workspace / "generated.txt").stat().st_uid, 65534)
+        self.assertEqual(workspace.stat().st_uid, 65534)
+        self.assertEqual(workspace.stat().st_mode & 0o777, 0o700)
+
     def test_sync_cleanup_unlinks_symlinks_instead_of_following_them(self):
         workspace = self.root / "11"
         workspace.mkdir()

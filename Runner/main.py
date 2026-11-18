@@ -28,7 +28,9 @@ def command_argv(command):
         f"ulimit -S -n {MAX_COMMAND_OPEN_FILES}; "
         f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
         "ulimit -S -c 0; ulimit -H -c 0; "
-        'exec bash -c "$1"'
+        'exec setpriv --reuid=65534 --regid=65534 --clear-groups '
+        '--bounding-set=-all --inh-caps=-all --ambient-caps=-all '
+        '--no-new-privs -- bash -c "$1"'
     )
     return ["bash", "-c", bootstrap, "runner-command", command]
 
@@ -183,6 +185,29 @@ def _terminate_remaining_process_group(proc):
     _kill_process_group(proc)
     return True
 
+def _prepare_workspace_for_execution(root):
+    # User code runs as a dedicated unprivileged identity, never as the API process.
+    # Make only this workspace accessible to that identity; never follow symlinks.
+    root = root.resolve()
+    uid = gid = 65534
+    for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        safe_directories = []
+        for name in directories:
+            child = current_path / name
+            if child.is_symlink():
+                continue
+            os.chown(child, uid, gid, follow_symlinks=False)
+            child.chmod(0o700)
+            safe_directories.append(name)
+        directories[:] = safe_directories
+        for name in files:
+            child = current_path / name
+            if not child.is_symlink():
+                os.chown(child, uid, gid, follow_symlinks=False)
+    os.chown(root, uid, gid, follow_symlinks=False)
+    root.chmod(0o700)
+
 def _run_command_with_slot(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
         raise HTTPException(status_code=400, detail="Command blocked by sandbox policy.")
@@ -191,6 +216,7 @@ def _run_command_with_slot(root, command):
     temp = root / ".tmp"
     home.mkdir(exist_ok=True)
     temp.mkdir(exist_ok=True)
+    _prepare_workspace_for_execution(root)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(home),
