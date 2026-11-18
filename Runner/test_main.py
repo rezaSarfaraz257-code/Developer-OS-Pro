@@ -15,6 +15,11 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.root.mkdir()
         self.addCleanup(self.temp.cleanup)
 
+    def test_workspace_is_private_from_creation(self):
+        with patch.object(main, "ROOT", self.root):
+            workspace = main.safe_workspace("21")
+        self.assertEqual(workspace.stat().st_mode & 0o777, 0o700)
+
     def test_workspace_rejects_symlink_escape(self):
         outside = Path(self.temp.name) / "outside"
         outside.mkdir()
@@ -98,10 +103,15 @@ class WorkspaceBoundaryTests(unittest.TestCase):
     def test_command_runs_as_unprivileged_identity_with_no_new_privileges(self):
         workspace = self.root / "14"
         workspace.mkdir()
-        command = "id -u; id -g; awk '/^NoNewPrivs:|^CapEff:|^CapBnd:/ {print $2}' /proc/self/status"
+        command = "id -u; id -g; grep -E '^(NoNewPrivs|CapEff|CapBnd):' /proc/self/status"
         result = main.run_command(workspace, command)
         self.assertEqual(result["exit_code"], 0, result["stderr"])
-        self.assertEqual(result["stdout"].splitlines(), ["65534", "65534", "1", "0000000000000000", "0000000000000000"])
+        lines = result["stdout"].splitlines()
+        self.assertEqual(lines[:2], ["65534", "65534"])
+        status = {line.split(":")[0]: line.split()[1] for line in lines[2:]}
+        self.assertEqual(status["NoNewPrivs"], "1")
+        self.assertEqual(status["CapEff"], "0000000000000000")
+        self.assertEqual(status["CapBnd"], "0000000000000000")
 
     def test_workspace_is_private_and_writable_by_command_identity(self):
         workspace = self.root / "15"

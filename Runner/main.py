@@ -91,6 +91,7 @@ def safe_workspace(workspace_id):
     p = p.resolve()
     if not p.is_relative_to(base) or p == base:
         raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
+    p.chmod(0o700)
     return p
 
 def safe_rel(path):
