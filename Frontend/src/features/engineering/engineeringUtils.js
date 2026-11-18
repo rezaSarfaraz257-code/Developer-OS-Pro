@@ -5,6 +5,20 @@ export const TASK_STATES = [
   ["done", "Completed"],
 ];
 
+
+/** Validate a strict YYYY-MM-DD calendar date without timezone parsing. */
+export function isValidDateOnly(value) {
+  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year < 1) return false;
+  const parsed = new Date(0);
+  parsed.setUTCHours(0, 0, 0, 0);
+  parsed.setUTCFullYear(year, month - 1, day);
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day;
+}
+
 export function normalizeApiList(value) {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.results)) return value.results;
@@ -67,28 +81,18 @@ export function getEngineeringInsights(tasks, projects, workspaces, now = new Da
   const taskRecords = normalizeApiList(tasks);
   const projectRecords = normalizeApiList(projects);
   const workspaceRecords = normalizeApiList(workspaces);
-  const today = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
+  const today = now instanceof Date && Number.isFinite(now.getTime())
+    ? [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-")
+    : null;
 
   const openTasks = taskRecords.filter((task) => task.status !== "done");
-  const overdue = openTasks.filter((task) => {
-    const dueDate = typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return false;
-    const [year, month, day] = dueDate.split("-").map(Number);
-    // Use UTC calendar arithmetic so daylight-saving transitions and
-    // local timezone offsets cannot change date-only deadline validation.
-    const parsed = new Date(0);
-    parsed.setUTCHours(0, 0, 0, 0);
-    parsed.setUTCFullYear(year, month - 1, day);
-    const isCalendarDate =
-      parsed.getUTCFullYear() === year &&
-      parsed.getUTCMonth() === month - 1 &&
-      parsed.getUTCDate() === day;
-    return isCalendarDate && dueDate < today;
-  }).length;
+  const overdue = today
+    ? openTasks.filter((task) => isValidDateOnly(task.due_date) && task.due_date < today).length
+    : 0;
   const unassigned = openTasks.filter((task) => task.assignee == null || task.assignee === "").length;
 
   return {
