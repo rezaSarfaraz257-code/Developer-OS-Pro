@@ -76,7 +76,14 @@ export function getEngineeringInsights(tasks, projects, workspaces, now = new Da
   const openTasks = taskRecords.filter((task) => task.status !== "done");
   const overdue = openTasks.filter((task) => {
     const dueDate = typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "";
-    return /^\d{4}-\d{2}-\d{2}$/.test(dueDate) && dueDate < today;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return false;
+    const [year, month, day] = dueDate.split("-").map(Number);
+    const parsed = new Date(year, month - 1, day);
+    const isCalendarDate =
+      parsed.getFullYear() === year &&
+      parsed.getMonth() === month - 1 &&
+      parsed.getDate() === day;
+    return isCalendarDate && dueDate < today;
   }).length;
   const unassigned = openTasks.filter((task) => task.assignee == null || task.assignee === "").length;
 
