@@ -57,6 +57,29 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertLessEqual(len(result["stdout"]), main.MAX_OUTPUT)
         self.assertTrue(result["stdout"].endswith("\n"))
 
+    def test_sync_cleanup_unlinks_symlinks_instead_of_following_them(self):
+        workspace = self.root / "11"
+        workspace.mkdir()
+        outside = Path(self.temp.name) / "outside-cache"
+        outside.mkdir()
+        protected = outside / "keep.txt"
+        protected.write_text("do not delete", encoding="utf-8")
+        (workspace / "node_modules").symlink_to(outside, target_is_directory=True)
+        (workspace / "source.txt").write_text("old", encoding="utf-8")
+
+        main.clear_workspace(workspace)
+
+        self.assertFalse((workspace / "node_modules").exists())
+        self.assertFalse((workspace / "source.txt").exists())
+        self.assertEqual(protected.read_text(encoding="utf-8"), "do not delete")
+
+    def test_workspace_lock_is_shared_for_the_same_workspace(self):
+        first = main.workspace_lock("123")
+        second = main.workspace_lock("123")
+        other = main.workspace_lock("124")
+        self.assertIs(first, second)
+        self.assertIsNot(first, other)
+
 
 if __name__ == "__main__":
     unittest.main()

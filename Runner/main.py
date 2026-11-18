@@ -11,6 +11,27 @@ MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = 120
+
+# Serialize operations per workspace. A sync must never replace files while a
+# command is executing against the same working directory.
+_WORKSPACE_LOCKS = {}
+_WORKSPACE_LOCKS_GUARD = threading.Lock()
+
+def workspace_lock(workspace_id):
+    key = str(workspace_id)
+    with _WORKSPACE_LOCKS_GUARD:
+        return _WORKSPACE_LOCKS.setdefault(key, threading.RLock())
+
+def clear_workspace(root):
+    preserved = {".npm-cache", ".pip-cache", ".home", "node_modules", ".venv"}
+    for child in root.iterdir():
+        # Never follow a symlink, including one using a preserved cache name.
+        if child.name in preserved and not child.is_symlink():
+            continue
+        if child.is_symlink() or not child.is_dir():
+            child.unlink()
+        else:
+            shutil.rmtree(child)
 BLOCKED = [
     r"\b(docker|podman|nsenter|unshare|mount|umount|chroot)\b",
     r"(^|\s)rm\s+-rf\s+/$",
@@ -198,30 +219,31 @@ def health():
 @app.post("/sync")
 def sync(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    # Keep dependency directories, but replace source tree so the database is the source of truth.
-    for child in root.iterdir():
-        if child.name not in {".npm-cache", ".pip-cache", ".home", "node_modules", ".venv"}:
-            shutil.rmtree(child) if child.is_dir() else child.unlink()
-    write_snapshot(root, payload.files)
-    return {"status": "synced", "files": snapshot(root)}
+    with workspace_lock(payload.workspace_id):
+        root = safe_workspace(payload.workspace_id)
+        # Keep real dependency/cache directories, but replace source files.
+        clear_workspace(root)
+        write_snapshot(root, payload.files)
+        return {"status": "synced", "files": snapshot(root)}
 
 @app.post("/snapshot")
 def get_snapshot(payload: Workspace, authorization: str = Header(default="")):
     auth(authorization)
-    return {"files": snapshot(safe_workspace(payload.workspace_id))}
+    with workspace_lock(payload.workspace_id):
+        return {"files": snapshot(safe_workspace(payload.workspace_id))}
 
 @app.post("/install")
 def install(payload: InstallRequest, authorization: str = Header(default="")):
     auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    result = run_command(root, payload.command)
-    return result
+    with workspace_lock(payload.workspace_id):
+        root = safe_workspace(payload.workspace_id)
+        write_snapshot(root, payload.files)
+        return run_command(root, payload.command)
 
 @app.post("/exec")
 def execute(payload: ExecRequest, authorization: str = Header(default="")):
     auth(authorization)
-    root = safe_workspace(payload.workspace_id)
-    write_snapshot(root, payload.files)
-    return run_command(root, payload.command)
+    with workspace_lock(payload.workspace_id):
+        root = safe_workspace(payload.workspace_id)
+        write_snapshot(root, payload.files)
+        return run_command(root, payload.command)
