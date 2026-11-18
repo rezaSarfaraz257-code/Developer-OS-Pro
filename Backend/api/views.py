@@ -102,6 +102,16 @@ if frontend_url_parts.scheme not in {"http", "https"} or not frontend_url_parts.
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_TIMEOUT = (3.05, 15)
 
+def github_oauth_config():
+    """Resolve OAuth settings at request time so Django overrides and runtime config agree."""
+    return {
+        "client_id": getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID,
+        "client_secret": getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET,
+        "redirect_uri": getattr(settings, "GITHUB_OAUTH_REDIRECT", None) or GITHUB_OAUTH_REDIRECT,
+        "scope": getattr(settings, "GITHUB_OAUTH_SCOPE", None) or GITHUB_OAUTH_SCOPE,
+    }
+
+
 
 def github_service_unavailable():
     return Response(
@@ -850,8 +860,9 @@ def snippet_detail_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def github_authorize(request):
+    oauth_config = github_oauth_config()
 
-    if not GITHUB_CLIENT_ID:
+    if not oauth_config["client_id"]:
         return Response(
             {
                 "error": "GITHUB_CLIENT_ID is not configured."
@@ -859,7 +870,7 @@ def github_authorize(request):
             status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
-    if not GITHUB_CLIENT_SECRET:
+    if not oauth_config["client_secret"]:
         return Response(
             {
                 "error": "GITHUB_CLIENT_SECRET is not configured."
@@ -889,9 +900,9 @@ def github_authorize(request):
     )
 
     github_url = "https://github.com/login/oauth/authorize?" + urlencode({
-        "client_id": GITHUB_CLIENT_ID,
-        "redirect_uri": GITHUB_OAUTH_REDIRECT,
-        "scope": GITHUB_OAUTH_SCOPE,
+        "client_id": oauth_config["client_id"],
+        "redirect_uri": oauth_config["redirect_uri"],
+        "scope": oauth_config["scope"],
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
@@ -911,6 +922,7 @@ def github_authorize(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def github_callback(request):
+    oauth_config = github_oauth_config()
 
     code = request.query_params.get("code")
     state = request.query_params.get("state")
@@ -947,10 +959,10 @@ def github_callback(request):
         token_response = requests.post(
             "https://github.com/login/oauth/access_token",
             data={
-                "client_id": GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
+                "client_id": oauth_config["client_id"],
+                "client_secret": oauth_config["client_secret"],
                 "code": code,
-                "redirect_uri": GITHUB_OAUTH_REDIRECT,
+                "redirect_uri": oauth_config["redirect_uri"],
                 "code_verifier": oauth_state.code_verifier,
             },
             headers={"Accept": "application/json"},
