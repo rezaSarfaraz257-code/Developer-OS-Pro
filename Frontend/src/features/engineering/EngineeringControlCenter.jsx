@@ -7,6 +7,7 @@ import {
   isDependencyCandidate,
   normalizeApiList,
   parseApiResponse,
+  parseEngineeringDate,
   taskStateLabel,
   TASK_STATES,
 } from "./engineeringUtils.js";
@@ -20,8 +21,8 @@ async function apiJson(path, options) {
 
 function formatDate(value) {
   if (!value) return "No due date";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+  const date = parseEngineeringDate(value);
+  return date ? date.toLocaleDateString() : String(value);
 }
 
 function formatTimestamp(value) {
