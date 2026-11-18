@@ -70,11 +70,12 @@ jobs:
             --read-only --init \
             --tmpfs /tmp:rw,nosuid,size=128m \
             --mount source=runner-smoke-workspaces,target=/workspaces \
-            --cap-drop ALL --cap-add SETUID --cap-add SETGID \
+            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+            --cap-add SETUID --cap-add SETGID \
             --security-opt no-new-privileges:true \
             --pids-limit 256 --memory 1g --cpus 2 \
             -e IDE_RUNNER_TOKEN=ci-runner-smoke-token \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -p 127.0.0.1:18080:8080 developeros-runner:ci
-          trap 'docker rm -f runner-smoke >/dev/null 2>&1 || true; docker volume rm runner-smoke-workspaces >/dev/null 2>&1 || true' EXIT
+          trap 'docker logs runner-smoke 2>&1 || true; docker rm -f runner-smoke >/dev/null 2>&1 || true; docker volume rm runner-smoke-workspaces >/dev/null 2>&1 || true' EXIT
           python Runner/docker_smoke_test.py

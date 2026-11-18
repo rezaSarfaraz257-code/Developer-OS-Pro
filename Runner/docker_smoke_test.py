@@ -27,7 +27,7 @@ def wait_ready():
             with urlopen(BASE_URL + "/health/ready", timeout=2) as response:
                 if response.status == 200:
                     return
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
             last_error = exc
         time.sleep(0.5)
     raise RuntimeError(f"Runner did not become ready: {last_error}")
