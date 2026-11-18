@@ -107,13 +107,59 @@ export default function EngineeringControlCenter({ go }) {
   }, []);
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(() => load({ quiet: true }), 20000);
-    const onFocus = () => load({ quiet: true });
+    let disposed = false;
+    let timer = null;
+    let refreshInFlight = false;
+
+    const clearScheduledRefresh = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      clearScheduledRefresh();
+      if (!disposed && document.visibilityState === "visible") {
+        timer = window.setTimeout(() => {
+          timer = null;
+          void refresh();
+        }, 20000);
+      }
+    };
+
+    const refresh = async (quiet = true) => {
+      if (disposed || document.visibilityState !== "visible" || refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        await load({ quiet });
+      } finally {
+        refreshInFlight = false;
+        scheduleRefresh();
+      }
+    };
+
+    const onFocus = () => void refresh();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        clearScheduledRefresh();
+      } else {
+        void refresh();
+      }
+    };
+    const onOnline = () => void refresh();
+
+    void refresh(false);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
-      window.clearInterval(timer);
+      disposed = true;
+      clearScheduledRefresh();
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       loadControllerRef.current?.abort();
       dependencyControllerRef.current?.abort();
     };
