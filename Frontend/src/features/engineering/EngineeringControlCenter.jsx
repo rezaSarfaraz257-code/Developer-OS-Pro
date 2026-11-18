@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../services/api";
 import {
   filterEngineeringTasks,
@@ -41,6 +41,7 @@ export default function EngineeringControlCenter({ go }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+  const loadControllerRef = useRef(null);
 
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -65,6 +66,9 @@ export default function EngineeringControlCenter({ go }) {
   const [assistantError, setAssistantError] = useState("");
 
   const load = useCallback(async ({ quiet = false } = {}) => {
+    loadControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
     if (quiet) setRefreshing(true);
     else {
       setLoading(true);
@@ -72,11 +76,12 @@ export default function EngineeringControlCenter({ go }) {
     }
     try {
       const [projectData, taskData, activityData, workspaceData] = await Promise.all([
-        apiJson("/projects/"),
-        apiJson("/tasks/"),
-        apiJson("/activity/"),
-        apiJson("/ide/workspaces/"),
+        apiJson("/projects/", { signal: controller.signal }),
+        apiJson("/tasks/", { signal: controller.signal }),
+        apiJson("/activity/", { signal: controller.signal }),
+        apiJson("/ide/workspaces/", { signal: controller.signal }),
       ]);
+      if (controller.signal.aborted) return;
       const nextProjects = normalizeApiList(projectData);
       const nextTasks = normalizeApiList(taskData);
       const nextWorkspaces = normalizeApiList(workspaceData);
@@ -88,10 +93,14 @@ export default function EngineeringControlCenter({ go }) {
       setWorkspaceId((current) => current || (nextWorkspaces[0] ? String(nextWorkspaces[0].id) : ""));
       setSelectedTaskId((current) => current || (nextTasks[0] ? String(nextTasks[0].id) : ""));
     } catch (err) {
-      setError(err.message || "Unable to load workspace data from the API.");
+      if (err.name !== "AbortError" && !controller.signal.aborted) {
+        setError(err.message || "Unable to load workspace data from the API.");
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -103,6 +112,7 @@ export default function EngineeringControlCenter({ go }) {
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
+      loadControllerRef.current?.abort();
     };
   }, [load]);
 
