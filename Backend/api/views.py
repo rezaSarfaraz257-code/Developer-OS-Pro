@@ -1701,22 +1701,73 @@ def comments_api(request):
     return Response(CommentSerializer(c).data, status=201)
 
 
+def _dependency_would_create_cycle(task_id, prerequisite_id):
+    """Return True when prerequisite_id already depends (directly or indirectly) on task_id."""
+    frontier = {prerequisite_id}
+    visited = set()
+    while frontier:
+        if task_id in frontier:
+            return True
+        visited.update(frontier)
+        next_frontier = set(
+            TaskDependency.objects.filter(task_id__in=frontier)
+            .exclude(depends_on_id__in=visited)
+            .values_list("depends_on_id", flat=True)
+        )
+        frontier = next_frontier
+    return False
+
+
 @api_view(["GET", "POST", "DELETE"])
 @permission_classes([IsAuthenticated])
 def task_dependencies_api(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if not task.project or not _project_access(task.project, request.user): return Response({"error":"Forbidden"}, status=403)
+    if not task.project or not _project_access(task.project, request.user):
+        return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == "GET":
-        deps = TaskDependency.objects.filter(task=task)
+        deps = TaskDependency.objects.filter(task=task).select_related("depends_on")
         return Response(TaskDependencySerializer(deps, many=True).data)
+
     if request.method == "DELETE":
-        dep = get_object_or_404(TaskDependency, pk=request.data.get("dependency_id"), task=task)
-        dep.delete(); return Response(status=204)
-    dep_task = get_object_or_404(Task, pk=request.data.get("depends_on"))
-    if dep_task == task: return Response({"error":"A task cannot depend on itself."}, status=400)
-    if dep_task.project_id != task.project_id: return Response({"error":"Dependencies must stay inside the project."}, status=400)
-    dep, _ = TaskDependency.objects.get_or_create(task=task, depends_on=dep_task)
-    return Response(TaskDependencySerializer(dep).data, status=201)
+        dep = get_object_or_404(
+            TaskDependency,
+            pk=request.data.get("dependency_id"),
+            task=task,
+        )
+        dep.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # Serialize dependency writes per project. This prevents two simultaneous
+    # requests from independently adding opposite edges and creating a cycle.
+    with transaction.atomic():
+        project = get_object_or_404(Project.objects.select_for_update(), pk=task.project_id)
+        task = get_object_or_404(Task.objects.select_for_update(), pk=pk, project=project)
+        if not _project_access(project, request.user):
+            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dep_task = get_object_or_404(
+            Task.objects.select_for_update(),
+            pk=request.data.get("depends_on"),
+        )
+        if dep_task == task:
+            return Response({"error": "A task cannot depend on itself."}, status=status.HTTP_400_BAD_REQUEST)
+        if dep_task.project_id != task.project_id:
+            return Response({"error": "Dependencies must stay inside the project."}, status=status.HTTP_400_BAD_REQUEST)
+        if _dependency_would_create_cycle(task.id, dep_task.id):
+            return Response(
+                {"error": "This prerequisite would create a dependency cycle. Choose a task that does not depend on this task."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dependency, created = TaskDependency.objects.get_or_create(
+            task=task,
+            depends_on=dep_task,
+        )
+        return Response(
+            TaskDependencySerializer(dependency).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 @api_view(["GET", "POST", "PATCH"])
