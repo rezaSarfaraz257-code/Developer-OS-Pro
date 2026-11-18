@@ -16,6 +16,18 @@ const tasks = [
   { id: 4, project: 20, status: "done" },
 ];
 
+test("isValidDateOnly accepts real calendar dates and rejects malformed values", () => {
+  assert.equal(isValidDateOnly("2024-02-29"), true);
+  assert.equal(isValidDateOnly("2000-02-29"), true);
+  assert.equal(isValidDateOnly("1900-02-29"), false);
+  assert.equal(isValidDateOnly("2026-02-30"), false);
+  assert.equal(isValidDateOnly("2026-13-01"), false);
+  assert.equal(isValidDateOnly("2026-01-00"), false);
+  assert.equal(isValidDateOnly("0000-01-01"), false);
+  assert.equal(isValidDateOnly("2026-11-18T00:00:00Z"), false);
+  assert.equal(isValidDateOnly(null), false);
+});
+
 test("normalizeApiList supports arrays and paginated API responses", () => {
   assert.deepEqual(normalizeApiList(tasks), tasks);
   assert.deepEqual(normalizeApiList({ results: tasks }), tasks);
@@ -103,6 +115,20 @@ test("getEngineeringInsights derives overdue, unassigned and capacity counts fro
     unassigned: 2,
     activeProjects: 2,
     configuredWorkspaces: 2,
+  });
+});
+
+test("getEngineeringInsights returns no overdue signal for an invalid clock value", () => {
+  assert.deepEqual(getEngineeringInsights(
+    [{ status: "todo", due_date: "2020-01-01", assignee: null }],
+    [],
+    [],
+    new Date("invalid"),
+  ), {
+    overdue: 0,
+    unassigned: 1,
+    activeProjects: 0,
+    configuredWorkspaces: 0,
   });
 });
 
