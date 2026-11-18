@@ -8,6 +8,7 @@ import {
   normalizeApiList,
   taskStateLabel,
   isValidDateOnly,
+  parseEngineeringDate,
 } from "../src/features/engineering/engineeringUtils.js";
 
 const tasks = [
@@ -27,6 +28,20 @@ test("isValidDateOnly accepts real calendar dates and rejects malformed values",
   assert.equal(isValidDateOnly("0000-01-01"), false);
   assert.equal(isValidDateOnly("2026-11-18T00:00:00Z"), false);
   assert.equal(isValidDateOnly(null), false);
+});
+
+test("parseEngineeringDate preserves date-only calendar days and validates values", () => {
+  const dateOnly = parseEngineeringDate("2026-11-19");
+  assert.ok(dateOnly instanceof Date);
+  assert.equal(dateOnly.getFullYear(), 2026);
+  assert.equal(dateOnly.getMonth(), 10);
+  assert.equal(dateOnly.getDate(), 19);
+  assert.equal(parseEngineeringDate("2026-02-30"), null);
+  assert.equal(parseEngineeringDate("not-a-date"), null);
+  assert.equal(parseEngineeringDate(null), null);
+  const timestamp = parseEngineeringDate("2026-11-19T12:30:00Z");
+  assert.ok(timestamp instanceof Date);
+  assert.equal(timestamp.toISOString(), "2026-11-19T12:30:00.000Z");
 });
 
 test("normalizeApiList supports arrays and paginated API responses", () => {
@@ -68,6 +83,9 @@ test("isDependencyCandidate rejects self, cross-project and duplicate dependenci
   assert.equal(isDependencyCandidate(task, { id: 4, project: 20 }, []), false);
   assert.equal(isDependencyCandidate(task, { id: 2, project: 10 }, [{ depends_on: 2 }]), false);
   assert.equal(isDependencyCandidate(null, { id: 2, project: 10 }, []), false);
+  assert.equal(isDependencyCandidate({ id: null, project: 10 }, { id: 2, project: 10 }, []), false);
+  assert.equal(isDependencyCandidate({ id: 1 }, { id: 2 }, []), false);
+  assert.equal(isDependencyCandidate(task, { id: 2, project: 10 }, [null]), true);
 });
 
 test("taskStateLabel maps known states and preserves unknown backend states", () => {
