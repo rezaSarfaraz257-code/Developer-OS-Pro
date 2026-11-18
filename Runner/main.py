@@ -18,7 +18,7 @@ MAX_COMMAND_OPEN_FILES = 256
 def command_argv(command):
     # Apply inherited POSIX limits before launching user-controlled shell code.
     # Pass the command as an argv value, never interpolate it into the bootstrap.
-    file_limit_blocks = MAX_COMMAND_FILE_BYTES // 512
+    file_limit_blocks = MAX_COMMAND_FILE_BYTES // 1024
     bootstrap = (
         "set -e; "
         f"ulimit -S -t {MAX_COMMAND_CPU_SECONDS}; "

@@ -73,7 +73,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             result["stdout"].splitlines(),
             [
                 str(main.MAX_COMMAND_CPU_SECONDS),
-                str(main.MAX_COMMAND_FILE_BYTES // 512),
+                str(main.MAX_COMMAND_FILE_BYTES),
                 str(main.MAX_COMMAND_OPEN_FILES),
                 "0",
             ],
