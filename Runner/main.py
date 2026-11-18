@@ -11,6 +11,26 @@ MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
 MAX_OUTPUT = 50_000
 TIMEOUT = 120
+MAX_COMMAND_CPU_SECONDS = 125
+MAX_COMMAND_FILE_BYTES = 256 * 1024 * 1024
+MAX_COMMAND_OPEN_FILES = 256
+
+def command_argv(command):
+    # Apply inherited POSIX limits before launching user-controlled shell code.
+    # Pass the command as an argv value, never interpolate it into the bootstrap.
+    file_limit_blocks = MAX_COMMAND_FILE_BYTES // 512
+    bootstrap = (
+        "set -e; "
+        f"ulimit -H -t {MAX_COMMAND_CPU_SECONDS}; "
+        f"ulimit -S -t {MAX_COMMAND_CPU_SECONDS}; "
+        f"ulimit -H -f {file_limit_blocks}; "
+        f"ulimit -S -f {file_limit_blocks}; "
+        f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
+        f"ulimit -S -n {MAX_COMMAND_OPEN_FILES}; "
+        "ulimit -H -c 0; ulimit -S -c 0; "
+        'exec bash -c "$1"'
+    )
+    return ["bash", "-c", bootstrap, "runner-command", command]
 
 # Serialize operations per workspace. A sync must never replace files while a
 # command is executing against the same working directory.
@@ -178,7 +198,7 @@ def _run_command_with_slot(root, command):
     orphaned_processes = False
     try:
         proc = subprocess.Popen(
-            ["bash", "-c", command],
+            command_argv(command),
             cwd=root,
             env=env,
             stdout=subprocess.PIPE,

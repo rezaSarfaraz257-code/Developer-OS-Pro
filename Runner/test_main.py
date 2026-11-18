@@ -57,6 +57,34 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertLessEqual(len(result["stdout"]), main.MAX_OUTPUT)
         self.assertTrue(result["stdout"].endswith("\n"))
 
+    def test_command_inherits_cpu_file_descriptor_and_core_limits(self):
+        workspace = self.root / "12"
+        workspace.mkdir()
+        command = (
+            "python3 -c 'import resource; "
+            "print(resource.getrlimit(resource.RLIMIT_CPU)[0]); "
+            "print(resource.getrlimit(resource.RLIMIT_FSIZE)[0]); "
+            "print(resource.getrlimit(resource.RLIMIT_NOFILE)[0]); "
+            "print(resource.getrlimit(resource.RLIMIT_CORE)[0])'"
+        )
+        result = main.run_command(workspace, command)
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertEqual(
+            result["stdout"].splitlines(),
+            [
+                str(main.MAX_COMMAND_CPU_SECONDS),
+                str(main.MAX_COMMAND_FILE_BYTES // 512),
+                str(main.MAX_COMMAND_OPEN_FILES),
+                "0",
+            ],
+        )
+
+    def test_command_is_passed_as_argument_not_bootstrap_interpolation(self):
+        command = "printf '%s' '$(touch should-not-exist)'"
+        argv = main.command_argv(command)
+        self.assertEqual(argv[-1], command)
+        self.assertNotIn(command, argv[2])
+
     def test_sync_cleanup_unlinks_symlinks_instead_of_following_them(self):
         workspace = self.root / "11"
         workspace.mkdir()
