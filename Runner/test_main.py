@@ -39,6 +39,33 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             main.write_snapshot(workspace, {"linked/pwned.txt": "must not be written"})
         self.assertFalse((outside / "pwned.txt").exists())
 
+    def test_snapshot_rejects_too_many_source_files_instead_of_truncating(self):
+        workspace = self.root / "17"
+        workspace.mkdir()
+        (workspace / "a.py").write_text("a", encoding="utf-8")
+        (workspace / "b.py").write_text("b", encoding="utf-8")
+        with patch.object(main, "MAX_FILES", 1):
+            with self.assertRaises(HTTPException) as error:
+                main.snapshot(workspace)
+        self.assertEqual(error.exception.status_code, 413)
+
+    def test_snapshot_rejects_total_source_bytes_over_limit(self):
+        workspace = self.root / "18"
+        workspace.mkdir()
+        (workspace / "large.py").write_text("1234", encoding="utf-8")
+        with patch.object(main, "MAX_WORKSPACE_BYTES", 3):
+            with self.assertRaises(HTTPException) as error:
+                main.snapshot(workspace)
+        self.assertEqual(error.exception.status_code, 413)
+
+    def test_snapshot_rejects_excessive_directory_entries(self):
+        workspace = self.root / "19"
+        workspace.mkdir()
+        (workspace / "nested").mkdir()
+        with patch.object(main, "MAX_SNAPSHOT_ENTRIES", 0):
+            with self.assertRaises(HTTPException) as error:
+                main.snapshot(workspace)
+        self.assertEqual(error.exception.status_code, 413)
     def test_snapshot_ignores_symlinked_files(self):
         outside = Path(self.temp.name) / "secret.txt"
         outside.write_text("private", encoding="utf-8")

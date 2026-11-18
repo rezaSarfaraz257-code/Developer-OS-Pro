@@ -9,6 +9,7 @@ TOKEN = os.environ.get("IDE_RUNNER_TOKEN", "")
 MAX_FILE = 1_000_000
 MAX_FILES = 2_000
 MAX_WORKSPACE_BYTES = 50_000_000
+MAX_SNAPSHOT_ENTRIES = 10_000
 MAX_OUTPUT = 50_000
 TIMEOUT = 120
 MAX_COMMAND_CPU_SECONDS = 125
@@ -125,24 +126,52 @@ def write_snapshot(root, files):
         target.write_text(content, encoding="utf-8")
 
 def snapshot(root):
+    """Return a bounded UTF-8 source snapshot; fail rather than silently truncate."""
     out = {}
     root = root.resolve()
     skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache"}
-    for p in root.rglob("*"):
-        if p.is_symlink() or not p.is_file() or any(part in skip for part in p.relative_to(root).parts):
-            continue
-        try:
-            _assert_inside_root(root, p)
-            if p.stat().st_size > MAX_FILE:
+    total_bytes = 0
+    visited_entries = 0
+    for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        directories[:] = sorted(
+            name for name in directories
+            if name not in skip and not (current_path / name).is_symlink()
+        )
+        for name in directories:
+            visited_entries += 1
+            if visited_entries > MAX_SNAPSHOT_ENTRIES:
+                raise HTTPException(status_code=413, detail="Workspace exceeds the snapshot entry limit")
+        for name in sorted(files):
+            path = current_path / name
+            visited_entries += 1
+            if visited_entries > MAX_SNAPSHOT_ENTRIES:
+                raise HTTPException(status_code=413, detail="Workspace exceeds the snapshot entry limit")
+            if path.is_symlink() or not path.is_file():
                 continue
-            data = p.read_bytes()
-            if b"\x00" in data:
+            try:
+                _assert_inside_root(root, path)
+                size = path.stat().st_size
+                if size > MAX_FILE:
+                    continue
+                if len(out) >= MAX_FILES:
+                    raise HTTPException(status_code=413, detail=f"Workspace exceeds {MAX_FILES} snapshot files")
+                if total_bytes + size > MAX_WORKSPACE_BYTES:
+                    raise HTTPException(status_code=413, detail="Workspace exceeds the 50 MB snapshot source limit")
+                data = path.read_bytes()
+                if b"\\x00" in data:
+                    continue
+                try:
+                    decoded = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+                out[str(path.relative_to(root)).replace(os.sep, "/")] = decoded
+                total_bytes += len(data)
+            except HTTPException:
+                raise
+            except (OSError, ValueError):
                 continue
-            out[str(p.relative_to(root)).replace(os.sep, "/")] = data.decode("utf-8")
-        except (OSError, ValueError):
-            continue
     return out
-
 def _tail_reader(stream, output):
     try:
         while True:
