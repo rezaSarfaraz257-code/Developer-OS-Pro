@@ -124,7 +124,6 @@ export default function EngineeringControlCenter({ go }) {
   }), [tasks]);
 
   const selectedTask = tasks.find((task) => String(task.id) === selectedTaskId);
-  const selectedProject = projects.find((project) => String(project.id) === projectId);
   const selectedWorkspace = workspaces.find((workspace) => String(workspace.id) === workspaceId);
 
   const loadDependencies = useCallback(async (taskId) => {
