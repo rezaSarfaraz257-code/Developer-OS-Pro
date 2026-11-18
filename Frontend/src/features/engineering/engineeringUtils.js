@@ -8,7 +8,7 @@ export const TASK_STATES = [
 
 /** Validate a strict YYYY-MM-DD calendar date without timezone parsing. */
 export function isValidDateOnly(value) {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
   if (year < 1) return false;
   const parsed = new Date(0);
