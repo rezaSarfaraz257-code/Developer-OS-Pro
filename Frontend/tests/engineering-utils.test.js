@@ -33,6 +33,8 @@ test("normalizeApiList supports arrays and paginated API responses", () => {
   assert.deepEqual(normalizeApiList(tasks), tasks);
   assert.deepEqual(normalizeApiList({ results: tasks }), tasks);
   assert.deepEqual(normalizeApiList({ results: "invalid" }), []);
+  assert.deepEqual(normalizeApiList([tasks[0], null, "invalid", [], tasks[1]]), [tasks[0], tasks[1]]);
+  assert.deepEqual(normalizeApiList({ results: [null, tasks[2], 42] }), [tasks[2]]);
   assert.deepEqual(normalizeApiList(null), []);
 });
 
