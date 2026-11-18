@@ -70,7 +70,7 @@ jobs:
             --read-only --init \
             --tmpfs /tmp:rw,nosuid,size=128m \
             --mount source=runner-smoke-workspaces,target=/workspaces \
-            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETPCAP \
             --cap-add SETUID --cap-add SETGID \
             --security-opt no-new-privileges:true \
             --pids-limit 256 --memory 1g --cpus 2 \
