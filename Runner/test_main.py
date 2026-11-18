@@ -49,6 +49,14 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 124)
         self.assertIn("timed out", result["stderr"].lower())
 
+    def test_command_output_is_bounded_while_streaming(self):
+        workspace = self.root / "10"
+        workspace.mkdir()
+        result = main.run_command(workspace, "python3 -c \"print('x' * 100000)\"")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertLessEqual(len(result["stdout"]), main.MAX_OUTPUT)
+        self.assertTrue(result["stdout"].endswith("\\n"))
+
 
 if __name__ == "__main__":
     unittest.main()

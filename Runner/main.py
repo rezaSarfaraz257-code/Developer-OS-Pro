@@ -1,4 +1,4 @@
-import os, re, subprocess, time, shutil, signal
+import hmac, os, re, subprocess, time, shutil, signal, threading
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -30,7 +30,7 @@ class InstallRequest(ExecRequest):
     package_manager: str = ""
 
 def auth(value):
-    if not TOKEN or value != f"Bearer {TOKEN}":
+    if not TOKEN or not hmac.compare_digest(value, f"Bearer {TOKEN}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 def safe_workspace(workspace_id):
@@ -96,12 +96,30 @@ def snapshot(root):
             continue
     return out
 
-def _bounded_output(value):
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    return value[-MAX_OUTPUT:]
+def _tail_reader(stream, output):
+    while True:
+        chunk = stream.read(8192)
+        if not chunk:
+            break
+        output.extend(chunk)
+        if len(output) > MAX_OUTPUT:
+            del output[:-MAX_OUTPUT]
+
+def _tail_text(output):
+    return bytes(output).decode("utf-8", errors="replace")
+
+def _kill_process_group(proc):
+    if proc is None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
 
 def run_command(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -127,6 +145,9 @@ def run_command(root, command):
     }
     started = time.monotonic()
     proc = None
+    stdout_tail, stderr_tail = bytearray(), bytearray()
+    readers = []
+    timed_out = False
     try:
         proc = subprocess.Popen(
             ["bash", "-c", command],
@@ -134,40 +155,39 @@ def run_command(root, command):
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             start_new_session=True,
             close_fds=True,
+            bufsize=0,
         )
-        stdout, stderr = proc.communicate(timeout=TIMEOUT)
+        for stream, tail in ((proc.stdout, stdout_tail), (proc.stderr, stderr_tail)):
+            reader = threading.Thread(target=_tail_reader, args=(stream, tail), daemon=True)
+            reader.start()
+            readers.append(reader)
+        try:
+            proc.wait(timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_group(proc)
+            proc.wait()
+        # Do not leave background children holding the output pipes open.
+        for reader in readers:
+            reader.join(timeout=1)
+        if any(reader.is_alive() for reader in readers):
+            _kill_process_group(proc)
+            for reader in readers:
+                reader.join(timeout=2)
         return {
-            "exit_code": proc.returncode,
-            "stdout": _bounded_output(stdout),
-            "stderr": _bounded_output(stderr),
+            "exit_code": 124 if timed_out else proc.returncode,
+            "stdout": _tail_text(stdout_tail),
+            "stderr": _tail_text(stderr_tail) or (f"Execution timed out after {TIMEOUT} seconds." if timed_out else ""),
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
         }
-    except subprocess.TimeoutExpired as exc:
+    except Exception:
         if proc is not None and proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            except OSError:
-                proc.kill()
-        stdout, stderr = ("", "")
-        if proc is not None:
-            try:
-                stdout, stderr = proc.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-        return {
-            "exit_code": 124,
-            "stdout": _bounded_output(stdout if stdout else exc.stdout),
-            "stderr": _bounded_output(stderr if stderr else exc.stderr) or f"Execution timed out after {TIMEOUT} seconds.",
-            "duration_ms": int((time.monotonic()-started)*1000),
-            "files": snapshot(root),
-        }
+            _kill_process_group(proc)
+            proc.wait()
+        raise
 
 @app.get("/health")
 def health():
