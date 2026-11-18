@@ -50,7 +50,9 @@ export default function EngineeringControlCenter({ go }) {
   const [taskDescription, setTaskDescription] = useState("");
   const [priority, setPriority] = useState("medium");
   const [creatingTask, setCreatingTask] = useState(false);
-  const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  // Track concurrent task updates independently so one response cannot
+  // unlock another task's in-flight status mutation.
+  const [updatingTaskIds, setUpdatingTaskIds] = useState(() => new Set());
 
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [dependencies, setDependencies] = useState([]);
@@ -232,8 +234,8 @@ export default function EngineeringControlCenter({ go }) {
   };
 
   const updateTask = async (task, nextStatus) => {
-    if (task.status === nextStatus) return;
-    setUpdatingTaskId(task.id);
+    if (task.status === nextStatus || updatingTaskIds.has(task.id)) return;
+    setUpdatingTaskIds((current) => new Set(current).add(task.id));
     setError("");
     try {
       await apiJson(`/tasks/${task.id}/`, {
@@ -244,7 +246,11 @@ export default function EngineeringControlCenter({ go }) {
     } catch (err) {
       setError(err.message || "Task status could not be saved.");
     } finally {
-      setUpdatingTaskId(null);
+      setUpdatingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
     }
   };
 
@@ -477,7 +483,7 @@ export default function EngineeringControlCenter({ go }) {
                 </button>
                 <label className="engineering-status-control">
                   <span className="sr-only">Update status for {task.title}</span>
-                  <select value={task.status} disabled={updatingTaskId === task.id} onChange={(event) => updateTask(task, event.target.value)}>
+                  <select value={task.status} disabled={updatingTaskIds.has(task.id)} onChange={(event) => updateTask(task, event.target.value)}>
                     {TASK_STATES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
                   </select>
                 </label>
