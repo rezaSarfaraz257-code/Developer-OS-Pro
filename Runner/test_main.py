@@ -29,6 +29,22 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 main.safe_workspace("42")
 
+    def test_workspace_id_must_be_a_canonical_positive_decimal(self):
+        with patch.object(main, "ROOT", self.root):
+            for invalid in ("0", "01", "-1", "../1", "1/2", "9" * 19):
+                with self.subTest(workspace_id=invalid):
+                    with self.assertRaises(HTTPException):
+                        main.safe_workspace(invalid)
+
+    def test_workspace_rejects_symlink_root_without_following_it(self):
+        outside = Path(self.temp.name) / "linked-outside"
+        outside.mkdir()
+        (self.root / "43").symlink_to(outside, target_is_directory=True)
+        with patch.object(main, "ROOT", self.root):
+            with self.assertRaises(HTTPException):
+                main.safe_workspace("43")
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_write_snapshot_rejects_symlink_parent_escape(self):
         outside = Path(self.temp.name) / "outside"
         outside.mkdir()
