@@ -20,9 +20,14 @@ export function isValidDateOnly(value) {
 }
 
 export function normalizeApiList(value) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.results)) return value.results;
-  return [];
+  const records = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.results)
+      ? value.results
+      : [];
+  // Ignore malformed collection entries before they reach UI renderers or
+  // derived metrics; valid backend records are plain JSON objects.
+  return records.filter((record) => record !== null && typeof record === "object" && !Array.isArray(record));
 }
 
 export function filterEngineeringTasks(tasks, projectId = "all", statusFilter = "all") {
