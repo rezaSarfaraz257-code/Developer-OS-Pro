@@ -148,6 +148,7 @@ def run_command(root, command):
     stdout_tail, stderr_tail = bytearray(), bytearray()
     readers = []
     timed_out = False
+    orphaned_processes = False
     try:
         proc = subprocess.Popen(
             ["bash", "-c", command],
@@ -173,13 +174,14 @@ def run_command(root, command):
         for reader in readers:
             reader.join(timeout=1)
         if any(reader.is_alive() for reader in readers):
+            orphaned_processes = True
             _kill_process_group(proc)
             for reader in readers:
                 reader.join(timeout=2)
         return {
-            "exit_code": 124 if timed_out else proc.returncode,
+            "exit_code": 124 if timed_out else (125 if orphaned_processes else proc.returncode),
             "stdout": _tail_text(stdout_tail),
-            "stderr": _tail_text(stderr_tail) or (f"Execution timed out after {TIMEOUT} seconds." if timed_out else ""),
+            "stderr": _tail_text(stderr_tail) or (f"Execution timed out after {TIMEOUT} seconds." if timed_out else ("Background child processes were terminated after the command exited." if orphaned_processes else "")),
             "duration_ms": int((time.monotonic()-started)*1000),
             "files": snapshot(root),
         }
