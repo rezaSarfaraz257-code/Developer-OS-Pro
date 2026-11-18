@@ -3,6 +3,7 @@ import { apiFetch } from "../../services/api";
 import {
   filterEngineeringTasks,
   getTaskCounts,
+  getEngineeringInsights,
   isDependencyCandidate,
   normalizeApiList,
   parseApiResponse,
@@ -123,6 +124,10 @@ export default function EngineeringControlCenter({ go }) {
     [tasks, projectId, statusFilter],
   );
   const counts = useMemo(() => getTaskCounts(tasks), [tasks]);
+  const insights = useMemo(
+    () => getEngineeringInsights(tasks, projects, workspaces),
+    [tasks, projects, workspaces],
+  );
 
   const selectedTask = tasks.find((task) => String(task.id) === selectedTaskId);
   const selectedWorkspace = workspaces.find((workspace) => String(workspace.id) === workspaceId);
@@ -362,6 +367,36 @@ export default function EngineeringControlCenter({ go }) {
         ].map(([label, value]) => (
           <div className="stat-card" key={label}><span>{label}</span><strong>{value}</strong><small>Backend task records</small></div>
         ))}
+      </section>
+
+      <section className="engineering-insights panel" aria-label="Live operational insights">
+        <div className="panel-head">
+          <div><span className="panel-kicker">LIVE PROJECT SIGNALS</span><h2>Operational overview</h2></div>
+          <span className="engineering-source">Derived from saved API records</span>
+        </div>
+        <div className="engineering-insight-grid">
+          <article className={`engineering-insight ${insights.overdue ? "attention" : ""}`}>
+            <span>OVERDUE OPEN TASKS</span>
+            <strong>{insights.overdue}</strong>
+            <small>{insights.overdue ? "Past due · not completed" : "No overdue tasks recorded"}</small>
+          </article>
+          <article className={`engineering-insight ${insights.unassigned ? "attention" : ""}`}>
+            <span>UNASSIGNED OPEN TASKS</span>
+            <strong>{insights.unassigned}</strong>
+            <small>{insights.unassigned ? "Need an owner" : "Every open task has an assignee"}</small>
+          </article>
+          <article className="engineering-insight">
+            <span>ACTIVE PROJECTS</span>
+            <strong>{insights.activeProjects}</strong>
+            <small>Planning or in progress</small>
+          </article>
+          <article className="engineering-insight">
+            <span>CONFIGURED WORKSPACES</span>
+            <strong>{insights.configuredWorkspaces}</strong>
+            <small>Saved IDE workspace records</small>
+          </article>
+        </div>
+        <p className="engineering-muted">Signals are calculated from the latest persisted project, task and workspace responses. They are operational indicators, not AI-generated predictions or proof of build quality.</p>
       </section>
 
       <div className="engineering-work-grid">
