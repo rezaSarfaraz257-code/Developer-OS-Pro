@@ -56,3 +56,36 @@ export async function parseApiResponse(response) {
     throw new Error(`The API returned an invalid response${status}. Check the server or proxy logs.`);
   }
 }
+
+
+/**
+ * Derive operational signals from persisted API records.
+ * These are descriptive counts only; they never imply agent execution or
+ * independently verified project health.
+ */
+export function getEngineeringInsights(tasks, projects, workspaces, now = new Date()) {
+  const taskRecords = normalizeApiList(tasks);
+  const projectRecords = normalizeApiList(projects);
+  const workspaceRecords = normalizeApiList(workspaces);
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  const openTasks = taskRecords.filter((task) => task.status !== "done");
+  const overdue = openTasks.filter((task) => {
+    const dueDate = typeof task.due_date === "string" ? task.due_date.slice(0, 10) : "";
+    return /^\d{4}-\d{2}-\d{2}$/.test(dueDate) && dueDate < today;
+  }).length;
+  const unassigned = openTasks.filter((task) => task.assignee == null || task.assignee === "").length;
+
+  return {
+    overdue,
+    unassigned,
+    activeProjects: projectRecords.filter((project) =>
+      project.status === "In Progress" || project.status === "Planning"
+    ).length,
+    configuredWorkspaces: workspaceRecords.filter((workspace) => workspace?.id != null).length,
+  };
+}
