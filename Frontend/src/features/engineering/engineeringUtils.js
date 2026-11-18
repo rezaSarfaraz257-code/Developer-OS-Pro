@@ -53,10 +53,33 @@ export function taskStateLabel(status) {
 }
 
 export function isDependencyCandidate(task, candidate, dependencies = []) {
-  if (!task || !candidate) return false;
+  if (!task || !candidate || task.id == null || candidate.id == null) return false;
+  if (task.project == null || candidate.project == null) return false;
   if (String(task.id) === String(candidate.id)) return false;
   if (String(task.project) !== String(candidate.project)) return false;
-  return !dependencies.some((dependency) => String(dependency.depends_on) === String(candidate.id));
+  return !normalizeApiList(dependencies).some(
+    (dependency) => dependency.depends_on != null &&
+      String(dependency.depends_on) === String(candidate.id),
+  );
+}
+
+/**
+ * Parse date-only API values as local calendar dates. Native Date parsing
+ * treats YYYY-MM-DD as UTC, which can display the previous day west of UTC.
+ * Timestamp values retain their normal instant-based parsing semantics.
+ */
+export function parseEngineeringDate(value) {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? new Date(value.getTime()) : null;
+  }
+  if (typeof value !== "string" || !value) return null;
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+    if (!isValidDateOnly(value)) return null;
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
 
