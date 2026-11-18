@@ -5,6 +5,7 @@ import {
   getTaskCounts,
   isDependencyCandidate,
   normalizeApiList,
+  parseApiResponse,
   taskStateLabel,
   TASK_STATES,
 } from "./engineeringUtils.js";
@@ -13,8 +14,7 @@ const LIFECYCLE = ["Think", "Plan", "Design", "Build", "Test", "Debug", "Repair"
 
 async function apiJson(path, options) {
   const response = await apiFetch(path, options);
-  if (response.status === 204) return null;
-  return response.json();
+  return parseApiResponse(response);
 }
 
 function formatDate(value) {
@@ -42,6 +42,7 @@ export default function EngineeringControlCenter({ go }) {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const loadControllerRef = useRef(null);
+  const dependencyControllerRef = useRef(null);
 
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -113,6 +114,7 @@ export default function EngineeringControlCenter({ go }) {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       loadControllerRef.current?.abort();
+      dependencyControllerRef.current?.abort();
     };
   }, [load]);
 
@@ -126,15 +128,20 @@ export default function EngineeringControlCenter({ go }) {
   const selectedWorkspace = workspaces.find((workspace) => String(workspace.id) === workspaceId);
 
   const loadDependencies = useCallback(async (taskId) => {
+    dependencyControllerRef.current?.abort();
     if (!taskId) {
       setDependencies([]);
       return;
     }
+    const controller = new AbortController();
+    dependencyControllerRef.current = controller;
     try {
-      const data = await apiJson(`/tasks/${taskId}/dependencies/`);
-      setDependencies(normalizeApiList(data));
+      const data = await apiJson(`/tasks/${taskId}/dependencies/`, { signal: controller.signal });
+      if (!controller.signal.aborted) setDependencies(normalizeApiList(data));
     } catch (err) {
-      setError(err.message || "Unable to load task dependencies.");
+      if (err.name !== "AbortError" && !controller.signal.aborted) {
+        setError(err.message || "Unable to load task dependencies.");
+      }
     }
   }, []);
 

@@ -39,3 +39,20 @@ export function isDependencyCandidate(task, candidate, dependencies = []) {
   if (String(task.project) !== String(candidate.project)) return false;
   return !dependencies.some((dependency) => String(dependency.depends_on) === String(candidate.id));
 }
+
+
+/**
+ * Parse a successful API response without assuming every proxy/server response
+ * is valid JSON. API endpoints in this feature have JSON contracts.
+ */
+export async function parseApiResponse(response) {
+  if (response.status === 204) return null;
+  const body = await response.text();
+  if (!body.trim()) return null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    const status = response.status ? ` (HTTP ${response.status})` : "";
+    throw new Error(`The API returned an invalid response${status}. Check the server or proxy logs.`);
+  }
+}

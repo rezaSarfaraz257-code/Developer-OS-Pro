@@ -60,3 +60,19 @@ test("taskStateLabel maps known states and preserves unknown backend states", ()
   assert.equal(taskStateLabel("custom_state"), "custom_state");
   assert.equal(taskStateLabel(""), "Unknown");
 });
+
+
+test("parseApiResponse handles empty, no-content and valid JSON responses", async () => {
+  const { parseApiResponse } = await import("../src/features/engineering/engineeringUtils.js");
+  assert.equal(await parseApiResponse(new Response(null, { status: 204 })), null);
+  assert.equal(await parseApiResponse(new Response("  ", { status: 200 })), null);
+  assert.deepEqual(await parseApiResponse(new Response(JSON.stringify({ id: 7 }), { status: 200 })), { id: 7 });
+});
+
+test("parseApiResponse reports invalid proxy/server responses clearly", async () => {
+  const { parseApiResponse } = await import("../src/features/engineering/engineeringUtils.js");
+  await assert.rejects(
+    parseApiResponse(new Response("<html>Bad Gateway</html>", { status: 502 })),
+    /invalid response \(HTTP 502\)/,
+  );
+});
