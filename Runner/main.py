@@ -121,13 +121,16 @@ def snapshot(root):
     return out
 
 def _tail_reader(stream, output):
-    while True:
-        chunk = stream.read(8192)
-        if not chunk:
-            break
-        output.extend(chunk)
-        if len(output) > MAX_OUTPUT:
-            del output[:-MAX_OUTPUT]
+    try:
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            output.extend(chunk)
+            if len(output) > MAX_OUTPUT:
+                del output[:-MAX_OUTPUT]
+    finally:
+        stream.close()
 
 def _tail_text(output):
     return bytes(output).decode("utf-8", errors="replace")
