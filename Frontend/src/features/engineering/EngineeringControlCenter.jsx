@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../services/api";
+import {
+  filterEngineeringTasks,
+  getTaskCounts,
+  isDependencyCandidate,
+  normalizeApiList,
+  taskStateLabel,
+  TASK_STATES,
+} from "./engineeringUtils.js";
 
 const LIFECYCLE = ["Think", "Plan", "Design", "Build", "Test", "Debug", "Repair"];
-const TASK_STATES = [
-  ["todo", "Planned"],
-  ["in_progress", "In progress"],
-  ["blocked", "Blocked"],
-  ["done", "Completed"],
-];
-
-function listOf(value) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.results)) return value.results;
-  return [];
-}
 
 async function apiJson(path, options) {
   const response = await apiFetch(path, options);
@@ -81,12 +77,12 @@ export default function EngineeringControlCenter({ go }) {
         apiJson("/activity/"),
         apiJson("/ide/workspaces/"),
       ]);
-      const nextProjects = listOf(projectData);
-      const nextTasks = listOf(taskData);
-      const nextWorkspaces = listOf(workspaceData);
+      const nextProjects = normalizeApiList(projectData);
+      const nextTasks = normalizeApiList(taskData);
+      const nextWorkspaces = normalizeApiList(workspaceData);
       setProjects(nextProjects);
       setTasks(nextTasks);
-      setActivity(listOf(activityData));
+      setActivity(normalizeApiList(activityData));
       setWorkspaces(nextWorkspaces);
       setLastUpdated(new Date());
       setWorkspaceId((current) => current || (nextWorkspaces[0] ? String(nextWorkspaces[0].id) : ""));
@@ -110,18 +106,11 @@ export default function EngineeringControlCenter({ go }) {
     };
   }, [load]);
 
-  const visibleTasks = useMemo(() => tasks.filter((task) => {
-    const matchesProject = projectId === "all" || String(task.project) === projectId;
-    const matchesStatus = statusFilter === "all" || task.status === statusFilter;
-    return matchesProject && matchesStatus;
-  }), [tasks, projectId, statusFilter]);
-
-  const counts = useMemo(() => ({
-    total: tasks.length,
-    active: tasks.filter((task) => task.status === "in_progress").length,
-    blocked: tasks.filter((task) => task.status === "blocked").length,
-    completed: tasks.filter((task) => task.status === "done").length,
-  }), [tasks]);
+  const visibleTasks = useMemo(
+    () => filterEngineeringTasks(tasks, projectId, statusFilter),
+    [tasks, projectId, statusFilter],
+  );
+  const counts = useMemo(() => getTaskCounts(tasks), [tasks]);
 
   const selectedTask = tasks.find((task) => String(task.id) === selectedTaskId);
   const selectedWorkspace = workspaces.find((workspace) => String(workspace.id) === workspaceId);
@@ -133,7 +122,7 @@ export default function EngineeringControlCenter({ go }) {
     }
     try {
       const data = await apiJson(`/tasks/${taskId}/dependencies/`);
-      setDependencies(listOf(data));
+      setDependencies(normalizeApiList(data));
     } catch (err) {
       setError(err.message || "Unable to load task dependencies.");
     }
@@ -382,7 +371,7 @@ export default function EngineeringControlCenter({ go }) {
             {visibleTasks.map((task) => (
               <article className={`engineering-task ${selectedTaskId === String(task.id) ? "selected-task" : ""}`} key={task.id}>
                 <button className="engineering-task-main" type="button" onClick={() => setSelectedTaskId(String(task.id))}>
-                  <span className={`engineering-task-state state-${task.status}`}>{TASK_STATES.find(([value]) => value === task.status)?.[1] || task.status}</span>
+                  <span className={`engineering-task-state state-${task.status}`}>{taskStateLabel(task.status)}</span>
                   <strong>{task.title}</strong>
                   <small>{projects.find((project) => String(project.id) === String(task.project))?.title || `Project #${task.project ?? "—"}`} · {task.priority} · Due {formatDate(task.due_date)}</small>
                   {task.description && <p>{task.description}</p>}
@@ -438,7 +427,7 @@ export default function EngineeringControlCenter({ go }) {
             {selectedTask && <form className="engineering-dependency-form" onSubmit={addDependency}>
               <select aria-label="Task that must be completed first" value={dependencyTarget} onChange={(event) => setDependencyTarget(event.target.value)}>
                 <option value="">Add prerequisite…</option>
-                {tasks.filter((task) => task.project === selectedTask.project && task.id !== selectedTask.id && !dependencies.some((dep) => dep.depends_on === task.id)).map((task) => <option value={String(task.id)} key={task.id}>{task.title}</option>)}
+                {tasks.filter((task) => isDependencyCandidate(selectedTask, task, dependencies)).map((task) => <option value={String(task.id)} key={task.id}>{task.title}</option>)}
               </select>
               <button className="primary" type="submit" disabled={dependencyBusy || !dependencyTarget}>ADD</button>
             </form>}
