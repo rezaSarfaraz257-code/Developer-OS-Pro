@@ -66,6 +66,14 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as error:
                 main.snapshot(workspace)
         self.assertEqual(error.exception.status_code, 413)
+    def test_snapshot_ignores_binary_files_containing_nul_bytes(self):
+        workspace = self.root / "20"
+        workspace.mkdir()
+        (workspace / "image.bin").write_bytes(b"header\\x00payload")
+        (workspace / "source.py").write_text("print(1)", encoding="utf-8")
+        result = main.snapshot(workspace)
+        self.assertNotIn("image.bin", result)
+        self.assertEqual(result["source.py"], "print(1)")
     def test_snapshot_ignores_symlinked_files(self):
         outside = Path(self.temp.name) / "secret.txt"
         outside.write_text("private", encoding="utf-8")

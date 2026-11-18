@@ -159,7 +159,7 @@ def snapshot(root):
                 if total_bytes + size > MAX_WORKSPACE_BYTES:
                     raise HTTPException(status_code=413, detail="Workspace exceeds the 50 MB snapshot source limit")
                 data = path.read_bytes()
-                if b"\\x00" in data:
+                if b"\x00" in data:
                     continue
                 try:
                     decoded = data.decode("utf-8")
