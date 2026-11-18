@@ -78,3 +78,33 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:1000px){.engineering-work-grid{grid-template-columns:1fr}.engineering-stages{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:720px){.engineering-mode-grid{grid-template-columns:1fr}.engineering-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.engineering-hero{display:flex;flex-direction:column;align-items:flex-start}.engineering-sync{width:100%;grid-template-columns:8px auto 1fr}.engineering-sync .ghost{grid-column:3;grid-row:1/3}.engineering-stage-panel .panel-head{display:block}.engineering-source{display:block;margin-top:6px}.engineering-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.engineering-filters{grid-template-columns:1fr}.engineering-task{align-items:flex-start;flex-direction:column}.engineering-status-control{width:100%}.engineering-boundaries ul{grid-template-columns:1fr}}
+
+
+/* Engineering OS — real runner, dependencies and intelligence */
+.engineering-task.selected-task{background:rgba(65,195,222,.045);border-left:2px solid var(--cyan);padding-left:10px}
+.engineering-task-main{display:block;flex:1;min-width:0;text-align:left;background:transparent;border:0;color:inherit;padding:0;cursor:pointer}
+.engineering-task-main:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+.engineering-dependency-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:12px 0}
+.engineering-dependency-form select,.engineering-runner-form select,.engineering-runner-form input,.engineering-intelligence-form textarea{min-width:0;width:100%;background:#080d15;border:1px solid var(--line);color:#dce9f5;border-radius:4px;padding:10px;font:10px "JetBrains Mono"}
+.engineering-dependency-list{display:grid}
+.engineering-dependency{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #16202c;font-size:10px;color:#bdcad6}
+.engineering-dependency .text-btn{font-size:8px}
+.engineering-runner-panel,.engineering-intelligence{margin-top:14px}
+.engineering-runner-form{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(220px,1.5fr) auto;gap:10px;align-items:end;margin:15px 0}
+.engineering-runner-form label{display:grid;gap:6px;color:#647b91;font:700 8px "JetBrains Mono";letter-spacing:.08em}
+.engineering-execution{display:grid;gap:12px;border:1px solid var(--line);background:#070b11;padding:14px;border-radius:5px;margin-top:14px}
+.engineering-execution-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.engineering-execution-meta strong{font:700 11px "JetBrains Mono";color:#dce9f5}
+.engineering-execution-meta span{font:700 8px "JetBrains Mono";letter-spacing:.08em}
+.engineering-execution-meta small,.engineering-execution>small{font:9px "JetBrains Mono";color:var(--muted)}
+.execution-success{color:var(--green)}
+.execution-failed{color:#ff8798}
+.engineering-execution pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;background:#030609;border:1px solid #17222e;padding:12px;color:#b6d7ca;font:10px/1.6 "JetBrains Mono";margin:7px 0}
+.engineering-execution>div>b{font:700 8px "JetBrains Mono";color:#7890a5;letter-spacing:.1em}
+.engineering-intelligence-form{display:grid;gap:10px;margin:14px 0}
+.engineering-intelligence-form textarea{resize:vertical;line-height:1.6}
+.engineering-intelligence-form button{justify-self:start}
+.engineering-assistant-reply{border:1px solid #244554;background:rgba(18,49,62,.18);padding:14px;border-radius:5px}
+.engineering-assistant-reply p{font-size:11px;line-height:1.75;color:#d2e0eb;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:900px){.engineering-runner-form{grid-template-columns:1fr 1fr}.engineering-runner-form button{grid-column:1/-1}}
+@media(max-width:620px){.engineering-runner-form{grid-template-columns:1fr}.engineering-runner-form button{grid-column:auto}.engineering-execution-meta{align-items:flex-start;flex-direction:column;gap:6px}}
