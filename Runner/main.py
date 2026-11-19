@@ -1,4 +1,4 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno
 from sandbox_exec import landlock_abi_version
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
@@ -101,7 +101,13 @@ def safe_workspace(workspace_id):
 
 def safe_rel(path):
     path = str(path).replace("\\", "/").lstrip("/")
-    if not path or len(path) > 500 or path.startswith(".git/") or any(x in (".", "..", "") for x in path.split("/")):
+    parts = path.split("/")
+    if (
+        not path
+        or len(path) > 500
+        or "\x00" in path
+        or any(part in (".", "..", "", ".git") for part in parts)
+    ):
         raise ValueError("unsafe path")
     return path
 
@@ -134,6 +140,8 @@ def _write_file_beneath(root, relative_path, content):
             view = memoryview(content)
             while view:
                 written = os.write(file_fd, view)
+                if written <= 0:
+                    raise OSError(errno.EIO, "workspace file write made no progress")
                 view = view[written:]
         finally:
             os.close(file_fd)
@@ -149,15 +157,21 @@ def write_snapshot(root, files):
     total = 0
     for rel, content in files.items():
         rel = safe_rel(rel)
-        if not isinstance(content, str) or len(content.encode()) > MAX_FILE:
+        if not isinstance(content, str):
+            raise ValueError("file content must be text")
+        try:
+            encoded = content.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("file content must be valid UTF-8 text") from exc
+        if len(encoded) > MAX_FILE:
             raise ValueError("file too large")
-        total += len(content.encode())
+        total += len(encoded)
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
         # Resolve each component relative to an already-open directory and
         # reject symlinks atomically; resolve-then-write would leave a TOCTOU gap.
         try:
-            _write_file_beneath(root, rel, content.encode("utf-8"))
+            _write_file_beneath(root, rel, encoded)
         except OSError as exc:
             raise ValueError("unsafe or unavailable workspace path") from exc
 
