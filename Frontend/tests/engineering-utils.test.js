@@ -11,6 +11,7 @@ import {
   parseEngineeringDate,
   reconcileRecordSelection,
   reconcileProjectSelection,
+  nextEngineeringPollDelay,
 } from "../src/features/engineering/engineeringUtils.js";
 
 const tasks = [
@@ -189,4 +190,15 @@ test("reconcileProjectSelection preserves the all filter and resets deleted proj
   assert.equal(reconcileProjectSelection(projects, 20), "20");
   assert.equal(reconcileProjectSelection(projects, "999"), "all");
   assert.equal(reconcileProjectSelection([], "10"), "all");
+});
+
+test("nextEngineeringPollDelay backs off after failures and remains bounded", () => {
+  assert.equal(nextEngineeringPollDelay(0), 20_000);
+  assert.equal(nextEngineeringPollDelay(1), 40_000);
+  assert.equal(nextEngineeringPollDelay(2), 80_000);
+  assert.equal(nextEngineeringPollDelay(3), 120_000);
+  assert.equal(nextEngineeringPollDelay(20), 120_000);
+  assert.equal(nextEngineeringPollDelay(-3), 20_000);
+  assert.equal(nextEngineeringPollDelay(Number.NaN), 20_000);
+  assert.equal(nextEngineeringPollDelay(1, 10_000, 25_000), 20_000);
 });
