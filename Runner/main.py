@@ -164,7 +164,10 @@ def write_snapshot(root, files):
             raise ValueError("workspace exceeds 50 MB source limit")
         # Resolve each component relative to an already-open directory and
         # reject symlinks atomically; resolve-then-write would leave a TOCTOU gap.
-        _write_file_beneath(root, rel, content.encode("utf-8"))
+        try:
+            _write_file_beneath(root, rel, content.encode("utf-8"))
+        except OSError as exc:
+            raise ValueError("unsafe or unavailable workspace path") from exc
 
 def snapshot(root):
     """Return a bounded UTF-8 source snapshot; fail rather than silently truncate."""
