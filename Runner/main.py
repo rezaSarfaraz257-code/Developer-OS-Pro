@@ -1,5 +1,4 @@
 import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno
-from sandbox_exec import landlock_abi_version
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -92,6 +91,7 @@ def safe_workspace(workspace_id):
             raise HTTPException(status_code=400, detail="Workspace path is outside the runner root")
         if not p.is_dir():
             raise HTTPException(status_code=400, detail="Workspace path is not a directory")
+        os.chown(p, 0, 0)
         p.chmod(0o700)
         return p
     except HTTPException:
@@ -282,6 +282,26 @@ def _prepare_workspace_for_execution(root, uid, gid):
     # let one workspace process traverse every other workspace owned by nobody.
     # Make only this workspace accessible to its identity; never follow symlinks.
     root = root.resolve()
+    # Keep the workspace root owned by root. A named POSIX ACL grants access
+    # only to this workspace's UID; the command user cannot chmod or widen it.
+    os.chown(root, 0, 0)
+    root.chmod(0o700)
+    try:
+        subprocess.run(
+            ["setfacl", "-b", "-k", str(root)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5,
+        )
+        acl = (
+            f"u:{uid}:rwx,m::rwx,"
+            f"d:u::rwx,d:u:{uid}:rwx,d:g::---,d:m::rwx,d:o::---"
+        )
+        subprocess.run(
+            ["setfacl", "-m", acl, str(root)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise HTTPException(status_code=503, detail="Runner workspace ACL isolation is unavailable") from exc
+
     for current, directories, files in os.walk(root, topdown=True, followlinks=False):
         current_path = Path(current)
         safe_directories = []
@@ -297,8 +317,6 @@ def _prepare_workspace_for_execution(root, uid, gid):
             child = current_path / name
             if not child.is_symlink():
                 os.chown(child, uid, gid, follow_symlinks=False)
-    os.chown(root, uid, gid, follow_symlinks=False)
-    root.chmod(0o700)
 
 def _run_command_with_slot(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -394,13 +412,17 @@ def health():
 def runner_readiness():
     if not TOKEN:
         raise HTTPException(status_code=503, detail="Runner authentication is not configured")
-    try:
-        if landlock_abi_version() < 1:
-            raise HTTPException(status_code=503, detail="Linux Landlock filesystem isolation is required")
-    except OSError:
-        raise HTTPException(status_code=503, detail="Linux Landlock filesystem isolation is unavailable")
+    if not shutil.which("setfacl"):
+        raise HTTPException(status_code=503, detail="Runner POSIX ACL support is required")
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".runner-acl-check-", dir=ROOT) as probe:
+            uid = WORKSPACE_UID_BASE + 1
+            acl = f"u:{uid}:rwx,m::rwx,d:u::rwx,d:u:{uid}:rwx,d:g::---,d:m::rwx,d:o::---"
+            subprocess.run(
+                ["setfacl", "-m", acl, probe],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5,
+            )
         if shutil.disk_usage(ROOT).free < 64 * 1024 * 1024:
             raise HTTPException(status_code=503, detail="Runner workspace storage is below the safety threshold")
         with tempfile.NamedTemporaryFile(prefix=".runner-ready-", dir=ROOT):
