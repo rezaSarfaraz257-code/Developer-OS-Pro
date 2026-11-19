@@ -144,10 +144,10 @@ export function getEngineeringInsights(tasks, projects, workspaces, now = new Da
  * first available record; empty collections always clear stale identifiers.
  */
 export function reconcileRecordSelection(records, selectedId) {
-  const items = normalizeApiList(records);
+  const items = normalizeApiList(records).filter((item) => item.id != null);
   if (!items.length) return "";
   const selected = items.find((item) => String(item.id) === String(selectedId));
-  return String((selected || items[0]).id ?? "");
+  return String((selected || items[0]).id);
 }
 
 /** Keep the project filter valid when the accessible project set changes. */
