@@ -136,3 +136,25 @@ export function getEngineeringInsights(tasks, projects, workspaces, now = new Da
     configuredWorkspaces: workspaceRecords.filter((workspace) => workspace?.id != null).length,
   };
 }
+
+
+/**
+ * Keep a selected record attached to the latest server collection.
+ * If the selected record was deleted, deterministically fall back to the
+ * first available record; empty collections always clear stale identifiers.
+ */
+export function reconcileRecordSelection(records, selectedId) {
+  const items = normalizeApiList(records);
+  if (!items.length) return "";
+  const selected = items.find((item) => String(item.id) === String(selectedId));
+  return String((selected || items[0]).id ?? "");
+}
+
+/** Keep the project filter valid when the accessible project set changes. */
+export function reconcileProjectSelection(projects, selectedId) {
+  if (selectedId === "all") return "all";
+  const items = normalizeApiList(projects);
+  return items.some((project) => String(project.id) === String(selectedId))
+    ? String(selectedId)
+    : "all";
+}
