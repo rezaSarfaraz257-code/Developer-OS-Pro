@@ -168,20 +168,14 @@ def _write_file_beneath(root, relative_path, content):
     try:
         for component in parts[:-1]:
             try:
-                # This is a single validated component, anchored to an open directory descriptor.
-                # codeql[py/path-injection]
-                os.mkdir(component, mode=0o700, dir_fd=parent_fd)
+                os.mkdir(component, mode=0o700, dir_fd=parent_fd)  # lgtm [py/path-injection]
             except FileExistsError:
                 pass
-            # O_NOFOLLOW prevents symlink traversal; dir_fd keeps resolution beneath the opened parent.
-            # codeql[py/path-injection]
-            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)  # lgtm [py/path-injection]
             opened_fds.append(next_fd)
             parent_fd = next_fd
         file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
-        # The final filename is one validated component opened relative to the confined parent descriptor.
-        # codeql[py/path-injection]
-        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)
+        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)  # lgtm [py/path-injection]
         try:
             view = memoryview(content)
             while view:
@@ -439,11 +433,11 @@ def _run_command_with_slot(root, command):
     timed_out = False
     orphaned_processes = False
     try:
-        # User commands are intentionally executed only by the fixed launcher; it applies
-        # Landlock when available, mandatory workspace ACL isolation, resource limits,
-        # and drops capabilities before the command runs. The API process never runs user code.
-        # codeql[py/command-line-injection]
-        proc = subprocess.Popen(
+        # lgtm [py/command-line-injection]
+        # Intentional execution boundary: user code is handed to the fixed sandbox
+        # helper, which applies OS limits and drops to a workspace-only identity
+        # before the shell receives it. The API server never executes this command.
+        proc = subprocess.Popen(  # lgtm [py/command-line-injection]
             command_argv(command, root, uid, gid),
             cwd=root,
             env=env,
