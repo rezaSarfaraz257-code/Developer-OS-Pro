@@ -1758,10 +1758,29 @@ def task_dependencies_api(request, pk):
         if not _project_access(project, request.user):
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
-        dep_task = get_object_or_404(
-            Task.objects.select_for_update(),
-            pk=request.data.get("depends_on"),
-        )
+        try:
+            dependency_id = int(request.data.get("depends_on"))
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if dependency_id <= 0:
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Filter by the already-authorized project so callers cannot probe
+        # whether task IDs from another user's project exist.
+        dep_task = Task.objects.select_for_update().filter(
+            pk=dependency_id,
+            project=project,
+        ).first()
+        if dep_task is None:
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if dep_task == task:
             return Response({"error": "A task cannot depend on itself."}, status=status.HTTP_400_BAD_REQUEST)
         if dep_task.project_id != task.project_id:
