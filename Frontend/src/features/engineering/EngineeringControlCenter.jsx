@@ -8,6 +8,8 @@ import {
   normalizeApiList,
   parseApiResponse,
   parseEngineeringDate,
+  reconcileRecordSelection,
+  reconcileProjectSelection,
   taskStateLabel,
   TASK_STATES,
 } from "./engineeringUtils.js";
@@ -97,8 +99,11 @@ export default function EngineeringControlCenter({ go }) {
       setActivity(normalizeApiList(activityData));
       setWorkspaces(nextWorkspaces);
       setLastUpdated(new Date());
-      setWorkspaceId((current) => current || (nextWorkspaces[0] ? String(nextWorkspaces[0].id) : ""));
-      setSelectedTaskId((current) => current || (nextTasks[0] ? String(nextTasks[0].id) : ""));
+      // Reconcile selections against the authoritative server snapshot.
+      // Deleted records must never leave stale IDs wired to subsequent actions.
+      setWorkspaceId((current) => reconcileRecordSelection(nextWorkspaces, current));
+      setSelectedTaskId((current) => reconcileRecordSelection(nextTasks, current));
+      setProjectId((current) => reconcileProjectSelection(nextProjects, current));
     } catch (err) {
       if (err.name !== "AbortError" && !controller.signal.aborted) {
         setError(err.message || "Unable to load workspace data from the API.");
