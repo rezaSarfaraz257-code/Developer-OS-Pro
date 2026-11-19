@@ -168,14 +168,14 @@ def _write_file_beneath(root, relative_path, content):
     try:
         for component in parts[:-1]:
             try:
-                os.mkdir(component, mode=0o700, dir_fd=parent_fd)
+                os.mkdir(component, mode=0o700, dir_fd=parent_fd)  # lgtm [py/path-injection]
             except FileExistsError:
                 pass
-            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)  # lgtm [py/path-injection]
             opened_fds.append(next_fd)
             parent_fd = next_fd
         file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
-        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)
+        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)  # lgtm [py/path-injection]
         try:
             view = memoryview(content)
             while view:
@@ -437,7 +437,7 @@ def _run_command_with_slot(root, command):
         # Intentional execution boundary: user code is handed to the fixed sandbox
         # helper, which applies OS limits and drops to a workspace-only identity
         # before the shell receives it. The API server never executes this command.
-        proc = subprocess.Popen(
+        proc = subprocess.Popen(  # lgtm [py/command-line-injection]
             command_argv(command, root, uid, gid),
             cwd=root,
             env=env,
