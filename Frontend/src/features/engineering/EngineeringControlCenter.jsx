@@ -57,7 +57,6 @@ export default function EngineeringControlCenter({ go }) {
   const [selectedTaskId, setSelectedTaskId] = useState("");
   // Keep async dependency mutations scoped to the task selected when they began.
   const selectedTaskIdRef = useRef(selectedTaskId);
-  selectedTaskIdRef.current = selectedTaskId;
   const [dependencies, setDependencies] = useState([]);
   const [dependencyTarget, setDependencyTarget] = useState("");
   const [dependencyBusy, setDependencyBusy] = useState(false);
@@ -203,6 +202,7 @@ export default function EngineeringControlCenter({ go }) {
   }, []);
 
   useEffect(() => {
+    selectedTaskIdRef.current = selectedTaskId;
     loadDependencies(selectedTaskId);
   }, [selectedTaskId, loadDependencies]);
 
@@ -227,7 +227,13 @@ export default function EngineeringControlCenter({ go }) {
       });
       setTaskTitle("");
       setTaskDescription("");
-      if (created?.id) setSelectedTaskId(String(created.id));
+      if (created?.id) {
+        const nextTaskId = String(created.id);
+        selectedTaskIdRef.current = nextTaskId;
+        setSelectedTaskId(nextTaskId);
+        setDependencyTarget("");
+        setDependencies([]);
+      }
       await load({ quiet: true });
     } catch (err) {
       setError(err.message || "Task could not be created.");
