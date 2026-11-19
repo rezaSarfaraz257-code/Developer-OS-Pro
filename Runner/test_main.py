@@ -74,11 +74,19 @@ class WorkspaceBoundaryTests(unittest.TestCase):
     def test_write_snapshot_rejects_nul_and_nested_git_paths(self):
         workspace = self.root / "46"
         workspace.mkdir()
-        for unsafe_path in ("bad\x00name.py", "src/.git/config"):
+        for unsafe_path in ("bad\x00name.py", "src/.git/config", ".home/passwd", ".tmp/output.log", "src/.npm-cache/cache", "src/.pip-cache/wheels"):
             with self.subTest(path=unsafe_path):
                 with self.assertRaises(ValueError):
                     main.write_snapshot(workspace, {unsafe_path: "blocked"})
         self.assertFalse((workspace / "src").exists())
+
+    def test_snapshot_omits_runner_identity_and_cache_directories(self):
+        workspace = self.root / "48"
+        for relative in (".home/passwd", ".home/group", ".tmp/output.log", ".npm-cache/cache", ".pip-cache/wheels"):
+            path = workspace / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("runtime-only", encoding="utf-8")
+        self.assertEqual(main.snapshot(workspace), {})
 
     def test_write_snapshot_rejects_invalid_utf8_surrogate_text(self):
         workspace = self.root / "47"
