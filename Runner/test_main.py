@@ -195,13 +195,14 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             ],
         )
 
-    def test_command_is_passed_as_argument_not_bootstrap_interpolation(self):
+    def test_command_is_not_exposed_in_sandbox_helper_arguments(self):
         command = "printf '%s' '$(touch should-not-exist)'"
         workspace = self.root / "31"
         workspace.mkdir()
-        argv = main.command_argv(command, workspace, 10031, 10031)
-        self.assertEqual(argv[-1], command)
-        self.assertNotIn(command, argv[1])
+        argv = main.command_argv(workspace, 10031, 10031)
+        self.assertEqual(argv[-3:], [str(workspace.resolve()), "10031", "10031"])
+        self.assertNotIn(command, argv)
+        self.assertNotIn("-c", argv)
 
     def test_command_runs_as_unprivileged_identity_with_no_new_privileges(self):
         workspace = self.root / "14"
