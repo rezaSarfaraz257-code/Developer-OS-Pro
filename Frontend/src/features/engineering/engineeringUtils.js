@@ -5,6 +5,14 @@ export const TASK_STATES = [
   ["done", "Completed"],
 ];
 
+/** Exponential polling backoff for resilient API synchronization. */
+export function nextEngineeringPollDelay(failures = 0, baseMs = 20_000, maxMs = 120_000) {
+  const count = Number.isFinite(failures) ? Math.max(0, Math.floor(failures)) : 0;
+  const base = Number.isFinite(baseMs) && baseMs > 0 ? baseMs : 20_000;
+  const max = Number.isFinite(maxMs) && maxMs >= base ? maxMs : 120_000;
+  return Math.min(max, base * (2 ** Math.min(count, 10)));
+}
+
 
 /** Validate a strict YYYY-MM-DD calendar date without timezone parsing. */
 export function isValidDateOnly(value) {
