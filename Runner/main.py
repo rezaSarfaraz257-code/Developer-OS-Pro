@@ -71,6 +71,26 @@ def auth(value):
     if not TOKEN or not hmac.compare_digest(value, f"Bearer {TOKEN}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+def _secure_workspace_root():
+    """Keep the shared parent root-owned and non-writable by command identities."""
+    ROOT.mkdir(parents=True, exist_ok=True)
+    if ROOT.is_symlink():
+        raise HTTPException(status_code=503, detail="Runner workspace root must not be a symlink")
+    base = ROOT.resolve(strict=True)
+    if not base.is_dir():
+        raise HTTPException(status_code=503, detail="Runner workspace root is not a directory")
+    try:
+        os.chown(base, 0, 0)
+        base.chmod(0o755)
+        subprocess.run(
+            ["setfacl", "-b", "-k", str(base)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise HTTPException(status_code=503, detail="Runner workspace root permissions are unavailable") from exc
+    return base
+
+
 def safe_workspace(workspace_id):
     # Workspace identifiers are database IDs, not arbitrary path fragments.
     # Canonicalize them before deriving a filesystem path.
@@ -78,8 +98,7 @@ def safe_workspace(workspace_id):
     if not re.fullmatch(r"[1-9][0-9]{0,9}", raw_id) or int(raw_id) > MAX_WORKSPACE_ID:
         raise HTTPException(status_code=400, detail="Invalid workspace id")
     canonical_id = str(int(raw_id))
-    ROOT.mkdir(parents=True, exist_ok=True)
-    base = ROOT.resolve()
+    base = _secure_workspace_root()
     candidate = base / canonical_id
     try:
         # Reject a pre-existing symlink rather than resolving through it.
@@ -415,7 +434,7 @@ def runner_readiness():
     if not shutil.which("setfacl"):
         raise HTTPException(status_code=503, detail="Runner POSIX ACL support is required")
     try:
-        ROOT.mkdir(parents=True, exist_ok=True)
+        _secure_workspace_root()
         with tempfile.TemporaryDirectory(prefix=".runner-acl-check-", dir=ROOT) as probe:
             uid = WORKSPACE_UID_BASE + 1
             acl = f"u:{uid}:rwx,m::rwx,d:u::rwx,d:u:{uid}:rwx,d:g::---,d:m::rwx,d:o::---"
