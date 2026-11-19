@@ -20,11 +20,11 @@ MAX_COMMAND_OPEN_FILES = 256
 WORKSPACE_UID_BASE = 10_000
 MAX_WORKSPACE_ID = 2_147_473_647
 
-def command_argv(command, root, uid, gid):
-    # The helper installs a kernel-enforced Landlock filesystem boundary before
-    # dropping to the workspace-specific UID/GID and execing user-controlled code.
+def command_argv(root, uid, gid):
+    # User scripts are streamed to the sandbox shell over stdin, never interpolated
+    # into the helper's process arguments or an API-server shell command.
     helper = Path(__file__).with_name("sandbox_exec.py")
-    return [sys.executable, str(helper), str(root.resolve()), str(uid), str(gid), command]
+    return [sys.executable, str(helper), str(root.resolve()), str(uid), str(gid)]
 
 # Serialize operations per workspace. A sync must never replace files while a
 # command is executing against the same working directory.
@@ -437,16 +437,23 @@ def _run_command_with_slot(root, command):
         # Intentional execution boundary: user code is handed to the fixed sandbox
         # helper, which applies OS limits and drops to a workspace-only identity
         # before the shell receives it. The API server never executes this command.
-        proc = subprocess.Popen(  # lgtm [py/command-line-injection]
-            command_argv(command, root, uid, gid),
+        proc = subprocess.Popen(
+            command_argv(root, uid, gid),
             cwd=root,
             env=env,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
             close_fds=True,
             bufsize=0,
         )
+        try:
+            proc.stdin.write(command.encode("utf-8") + b"\\n")
+            proc.stdin.close()
+        except BrokenPipeError:
+            # The sandbox helper failed before exec; preserve its stderr/exit status.
+            pass
         for stream, tail in ((proc.stdout, stdout_tail), (proc.stderr, stderr_tail)):
             reader = threading.Thread(target=_tail_reader, args=(stream, tail), daemon=True)
             reader.start()
