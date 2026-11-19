@@ -125,7 +125,7 @@ def safe_rel(path):
         not path
         or len(path) > 500
         or "\x00" in path
-        or any(part in (".", "..", "", ".git") for part in parts)
+        or any(part in (".", "..", "", ".git", ".home", ".tmp", ".npm-cache", ".pip-cache") for part in parts)
     ):
         raise ValueError("unsafe path")
     return path
@@ -198,7 +198,7 @@ def snapshot(root):
     """Return a bounded UTF-8 source snapshot; fail rather than silently truncate."""
     out = {}
     root = root.resolve()
-    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache"}
+    skip = {".git", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".home", ".tmp", ".npm-cache", ".pip-cache"}
     total_bytes = 0
     visited_entries = 0
     for current, directories, files in os.walk(root, topdown=True, followlinks=False):
