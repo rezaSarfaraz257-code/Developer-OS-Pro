@@ -31,7 +31,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
 
     def test_workspace_id_must_be_a_canonical_positive_decimal(self):
         with patch.object(main, "ROOT", self.root):
-            for invalid in ("0", "01", "-1", "../1", "1/2", "9" * 19):
+            for invalid in ("0", "01", "-1", "../1", "1/2", "9" * 19, str(main.MAX_WORKSPACE_ID + 1)):
                 with self.subTest(workspace_id=invalid):
                     with self.assertRaises(HTTPException):
                         main.safe_workspace(invalid)
@@ -167,7 +167,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
 
     def test_command_is_passed_as_argument_not_bootstrap_interpolation(self):
         command = "printf '%s' '$(touch should-not-exist)'"
-        argv = main.command_argv(command)
+        argv = main.command_argv(command, 10031, 10031)
         self.assertEqual(argv[-1], command)
         self.assertNotIn(command, argv[2])
 
@@ -178,7 +178,8 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         result = main.run_command(workspace, command)
         self.assertEqual(result["exit_code"], 0, result["stderr"])
         lines = result["stdout"].splitlines()
-        self.assertEqual(lines[:2], ["65534", "65534"])
+        expected_uid, expected_gid = main.workspace_identity(workspace)
+        self.assertEqual(lines[:2], [str(expected_uid), str(expected_gid)])
         status = {line.split(":")[0]: line.split()[1] for line in lines[2:]}
         self.assertEqual(status["NoNewPrivs"], "1")
         self.assertEqual(status["CapEff"], "0000000000000000")
@@ -198,9 +199,13 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             first = main.safe_workspace("31")
             second = main.safe_workspace("32")
         (second / "secret.txt").write_text("private workspace data", encoding="utf-8")
-        result = main.run_command(first, "cat ../32/secret.txt")
-        self.assertNotEqual(result["exit_code"], 0)
-        self.assertNotIn("private workspace data", result["stdout"])
+        # Run in both workspaces so each directory is owned by its actual command UID.
+        first_result = main.run_command(first, "echo first-workspace")
+        second_result = main.run_command(second, "cat ../31/secret.txt")
+        self.assertEqual(first_result["exit_code"], 0, first_result["stderr"])
+        self.assertNotEqual(second_result["exit_code"], 0)
+        self.assertNotIn("private workspace data", second_result["stdout"])
+        self.assertNotEqual(main.workspace_identity(first), main.workspace_identity(second))
 
     def test_workspace_is_private_and_writable_by_command_identity(self):
         workspace = self.root / "15"
