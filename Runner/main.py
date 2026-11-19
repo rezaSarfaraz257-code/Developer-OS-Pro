@@ -1,4 +1,4 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno, ctypes.util
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno, ctypes.util, glob
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -70,6 +70,21 @@ class InstallRequest(ExecRequest):
 def auth(value):
     if not TOKEN or not hmac.compare_digest(value, f"Bearer {TOKEN}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+def find_nss_wrapper_library():
+    """Resolve the distro NSS wrapper library even when it lacks an unversioned symlink."""
+    patterns = (
+        "/usr/lib/*/libnss_wrapper.so*",
+        "/lib/*/libnss_wrapper.so*",
+        "/usr/lib/libnss_wrapper.so*",
+        "/lib/libnss_wrapper.so*",
+    )
+    for pattern in patterns:
+        for candidate in sorted(glob.glob(pattern)):
+            if os.path.isfile(candidate):
+                return os.path.realpath(candidate)
+    return ctypes.util.find_library("nss_wrapper")
+
 
 def _secure_workspace_root():
     """Keep the shared parent root-owned and non-writable by command identities."""
@@ -477,7 +492,7 @@ def runner_readiness():
         raise HTTPException(status_code=503, detail="Runner authentication is not configured")
     if not shutil.which("setfacl"):
         raise HTTPException(status_code=503, detail="Runner POSIX ACL support is required")
-    if not ctypes.util.find_library("nss_wrapper"):
+    if not find_nss_wrapper_library():
         raise HTTPException(status_code=503, detail="Runner workspace identity compatibility library is required")
     try:
         _secure_workspace_root()
