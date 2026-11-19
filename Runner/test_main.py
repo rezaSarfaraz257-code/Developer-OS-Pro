@@ -65,6 +65,21 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             main.write_snapshot(workspace, {"linked.txt": "must not overwrite"})
         self.assertEqual(outside.read_text(encoding="utf-8"), "keep this content")
 
+    def test_write_snapshot_rejects_nul_and_nested_git_paths(self):
+        workspace = self.root / "46"
+        workspace.mkdir()
+        for unsafe_path in ("bad\\x00name.py", "src/.git/config"):
+            with self.subTest(path=unsafe_path):
+                with self.assertRaises(ValueError):
+                    main.write_snapshot(workspace, {unsafe_path: "blocked"})
+        self.assertFalse((workspace / "src").exists())
+
+    def test_write_snapshot_rejects_invalid_utf8_surrogate_text(self):
+        workspace = self.root / "47"
+        workspace.mkdir()
+        with self.assertRaises(ValueError):
+            main.write_snapshot(workspace, {"source.py": "\\ud800"})
+
     def test_write_snapshot_creates_nested_files_without_following_links(self):
         workspace = self.root / "45"
         workspace.mkdir()
