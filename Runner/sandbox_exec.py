@@ -176,9 +176,9 @@ def apply_resource_limits():
 
 
 def main():
-    if len(sys.argv) != 5:
-        raise SystemExit("sandbox launcher expects workspace, uid, gid and command")
-    workspace, uid_text, gid_text, command = sys.argv[1:]
+    if len(sys.argv) != 4:
+        raise SystemExit("sandbox launcher expects workspace, uid, gid and a script on stdin")
+    workspace, uid_text, gid_text = sys.argv[1:]
     uid, gid = int(uid_text), int(gid_text)
     apply_resource_limits()
     apply_workspace_landlock(workspace)
@@ -196,8 +196,6 @@ def main():
         "--no-new-privs",
         "--",
         "/bin/bash",
-        "-c",
-        command,
     ]
     env = os.environ.copy()
     nss_wrapper = find_nss_wrapper_library()
