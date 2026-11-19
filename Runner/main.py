@@ -120,6 +120,36 @@ def _assert_inside_root(root, candidate):
         raise ValueError("workspace path escapes the workspace root")
     return resolved
 
+def _write_file_beneath(root, relative_path, content):
+    """Write below root using directory descriptors and O_NOFOLLOW at every hop."""
+    parts = relative_path.split("/")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    root_fd = os.open(root, directory_flags)
+    parent_fd = root_fd
+    opened_fds = []
+    try:
+        for component in parts[:-1]:
+            try:
+                os.mkdir(component, mode=0o700, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            opened_fds.append(next_fd)
+            parent_fd = next_fd
+        file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
+        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)
+        try:
+            view = memoryview(content)
+            while view:
+                written = os.write(file_fd, view)
+                view = view[written:]
+        finally:
+            os.close(file_fd)
+    finally:
+        for descriptor in reversed(opened_fds):
+            os.close(descriptor)
+        os.close(root_fd)
+
 def write_snapshot(root, files):
     root = root.resolve()
     if len(files) > MAX_FILES:
@@ -132,10 +162,9 @@ def write_snapshot(root, files):
         total += len(content.encode())
         if total > MAX_WORKSPACE_BYTES:
             raise ValueError("workspace exceeds 50 MB source limit")
-        target = _assert_inside_root(root, root / rel)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target = _assert_inside_root(root, target)
-        target.write_text(content, encoding="utf-8")
+        # Resolve each component relative to an already-open directory and
+        # reject symlinks atomically; resolve-then-write would leave a TOCTOU gap.
+        _write_file_beneath(root, rel, content.encode("utf-8"))
 
 def snapshot(root):
     """Return a bounded UTF-8 source snapshot; fail rather than silently truncate."""
