@@ -1,4 +1,4 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys, errno, ctypes.util
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -335,7 +335,11 @@ def _prepare_workspace_for_execution(root, uid, gid):
         for name in files:
             child = current_path / name
             if not child.is_symlink():
-                os.chown(child, uid, gid, follow_symlinks=False)
+                if current_path == root / ".home" and name in {"passwd", "group"}:
+                    os.chown(child, 0, 0, follow_symlinks=False)
+                    child.chmod(0o444)
+                else:
+                    os.chown(child, uid, gid, follow_symlinks=False)
 
 def _run_command_with_slot(root, command):
     if any(re.search(pattern, command, re.I) for pattern in BLOCKED):
@@ -343,13 +347,39 @@ def _run_command_with_slot(root, command):
     root = root.resolve()
     home = root / ".home"
     temp = root / ".tmp"
-    home.mkdir(exist_ok=True)
-    temp.mkdir(exist_ok=True)
+    for directory in (home, temp):
+        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+            if directory.is_dir() and not directory.is_symlink():
+                shutil.rmtree(directory)
+            else:
+                directory.unlink()
+        directory.mkdir(exist_ok=True)
     uid, gid = workspace_identity(root)
+    passwd_path = home / "passwd"
+    group_path = home / "group"
+    for identity_file in (passwd_path, group_path):
+        if identity_file.is_symlink() or identity_file.exists():
+            if identity_file.is_dir() and not identity_file.is_symlink():
+                shutil.rmtree(identity_file)
+            else:
+                identity_file.unlink()
+    passwd_text = (
+        "root:x:0:0:root:/root:/bin/bash\\n"
+        f"dos:x:{uid}:{gid}:Developer OS Workspace:{home}:/bin/bash\\n"
+        "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\\n"
+    )
+    group_text = f"root:x:0:\\ndos:x:{gid}:\\nnogroup:x:65534:\\n"
+    _write_file_beneath(root, ".home/passwd", passwd_text.encode("utf-8"))
+    _write_file_beneath(root, ".home/group", group_text.encode("utf-8"))
     _prepare_workspace_for_execution(root, uid, gid)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(home),
+        "USER": "dos",
+        "LOGNAME": "dos",
+        "SHELL": "/bin/bash",
+        "NSS_WRAPPER_PASSWD": str(home / "passwd"),
+        "NSS_WRAPPER_GROUP": str(home / "group"),
         "TMPDIR": str(temp),
         "npm_config_cache": str(root / ".npm-cache"),
         "PIP_CACHE_DIR": str(root / ".pip-cache"),
@@ -433,6 +463,8 @@ def runner_readiness():
         raise HTTPException(status_code=503, detail="Runner authentication is not configured")
     if not shutil.which("setfacl"):
         raise HTTPException(status_code=503, detail="Runner POSIX ACL support is required")
+    if not ctypes.util.find_library("nss_wrapper"):
+        raise HTTPException(status_code=503, detail="Runner workspace identity compatibility library is required")
     try:
         _secure_workspace_root()
         with tempfile.TemporaryDirectory(prefix=".runner-acl-check-", dir=ROOT) as probe:
