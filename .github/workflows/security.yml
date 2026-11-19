@@ -35,12 +35,15 @@ jobs:
   dependency-review:
     # Scan lockfiles and pinned Python requirements directly. This works even
     # when the repository's optional GitHub Dependency Graph is disabled.
-    if: github.event_name == 'pull_request'
+    # Only same-repository PRs may receive a narrowly scoped lockfile commit.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -50,13 +53,18 @@ jobs:
       - name: Audit frontend lockfile
         working-directory: Frontend
         run: npm audit --audit-level=high
-      - name: Export updated frontend lockfile for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-lockfile-remediation
-          path: Frontend/package-lock.json
-          if-no-files-found: error
+      - name: Commit patched frontend lockfile
+        if: success()
+        run: |
+          if git diff --quiet -- Frontend/package-lock.json; then
+            echo "Frontend lockfile already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Frontend/package-lock.json
+          git commit -m "fix(frontend): patch vulnerable npm dependencies"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
