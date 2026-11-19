@@ -122,3 +122,16 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
 .engineering-insight.attention>strong{color:var(--amber)}
 @media(max-width:1000px){.engineering-insight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.engineering-insight-grid{grid-template-columns:1fr}}
+
+/* Command IDE: real runner controls and responsive command input. */
+.ide-actions{align-items:end;flex-wrap:wrap}
+.ide-command{display:grid;gap:5px;min-width:190px}
+.ide-command>span{font:700 8px "JetBrains Mono";letter-spacing:.08em;color:#60768c}
+.ide-command input{width:100%;min-width:0;background:#080d15;border:1px solid var(--line);border-radius:4px;padding:9px 10px;color:#dff4ff;font:10px "JetBrains Mono";outline:none}
+.ide-command input:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(67,232,255,.1)}
+.ide-actions button:disabled,.tree-head button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:720px){
+  .ide-command{width:100%;min-width:100%}
+  .ide-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ide-actions button{min-width:0}
+}
