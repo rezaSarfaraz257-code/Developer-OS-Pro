@@ -1,4 +1,5 @@
-import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile
+import hmac, os, re, subprocess, time, shutil, signal, threading, weakref, tempfile, sys
+from sandbox_exec import landlock_abi_version
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -20,24 +21,11 @@ MAX_COMMAND_OPEN_FILES = 256
 WORKSPACE_UID_BASE = 10_000
 MAX_WORKSPACE_ID = 2_147_473_647
 
-def command_argv(command, uid, gid):
-    # Apply inherited POSIX limits before launching user-controlled shell code.
-    # Pass the command as an argv value, never interpolate it into the bootstrap.
-    file_limit_blocks = MAX_COMMAND_FILE_BYTES // 1024
-    bootstrap = (
-        "set -e; "
-        f"ulimit -S -t {MAX_COMMAND_CPU_SECONDS}; "
-        f"ulimit -H -t {MAX_COMMAND_CPU_SECONDS}; "
-        f"ulimit -S -f {file_limit_blocks}; "
-        f"ulimit -H -f {file_limit_blocks}; "
-        f"ulimit -S -n {MAX_COMMAND_OPEN_FILES}; "
-        f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
-        "ulimit -S -c 0; ulimit -H -c 0; "
-        f'exec setpriv --reuid={uid} --regid={gid} --clear-groups '
-        '--bounding-set=-all --inh-caps=-all --ambient-caps=-all '
-        '--no-new-privs -- bash -c "$1"'
-    )
-    return ["bash", "-c", bootstrap, "runner-command", command]
+def command_argv(command, root, uid, gid):
+    # The helper installs a kernel-enforced Landlock filesystem boundary before
+    # dropping to the workspace-specific UID/GID and execing user-controlled code.
+    helper = Path(__file__).with_name("sandbox_exec.py")
+    return [sys.executable, str(helper), str(root.resolve()), str(uid), str(gid), command]
 
 # Serialize operations per workspace. A sync must never replace files while a
 # command is executing against the same working directory.
@@ -330,7 +318,7 @@ def _run_command_with_slot(root, command):
     orphaned_processes = False
     try:
         proc = subprocess.Popen(
-            command_argv(command, uid, gid),
+            command_argv(command, root, uid, gid),
             cwd=root,
             env=env,
             stdout=subprocess.PIPE,
@@ -392,6 +380,11 @@ def health():
 def runner_readiness():
     if not TOKEN:
         raise HTTPException(status_code=503, detail="Runner authentication is not configured")
+    try:
+        if landlock_abi_version() < 1:
+            raise HTTPException(status_code=503, detail="Linux Landlock filesystem isolation is required")
+    except OSError:
+        raise HTTPException(status_code=503, detail="Linux Landlock filesystem isolation is unavailable")
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(ROOT).free < 64 * 1024 * 1024:
