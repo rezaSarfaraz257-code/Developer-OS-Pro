@@ -98,7 +98,12 @@ def _add_path_rule(ruleset_fd, path, allowed_access):
 
 def apply_workspace_landlock(workspace):
     """Allow full access only inside workspace and read/execute access to OS files."""
-    abi = landlock_abi_version()
+    try:
+        abi = landlock_abi_version()
+    except OSError as exc:
+        if exc.errno in (errno.ENOSYS, errno.EPERM, errno.EOPNOTSUPP):
+            return False  # POSIX ACLs remain the mandatory isolation boundary.
+        raise
     handled = _handled_access(abi)
     ruleset_attr = RulesetAttr(handled)
     ruleset_fd = _syscall(
@@ -129,6 +134,11 @@ def apply_workspace_landlock(workspace):
             raise OSError(error_number, os.strerror(error_number))
 
         _syscall(SYS_LANDLOCK_RESTRICT_SELF, ctypes.c_int(ruleset_fd), ctypes.c_uint(0))
+        return True
+    except OSError as exc:
+        if exc.errno in (errno.ENOSYS, errno.EPERM, errno.EOPNOTSUPP):
+            return False
+        raise
     finally:
         os.close(ruleset_fd)
 
