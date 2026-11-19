@@ -51,6 +51,7 @@ def main():
         "files": {"main.py": "print('container-smoke-ok')"},
         "command": (
             "id -u; id -g; "
+            "node -e \\\"const u=require('os').userInfo(); console.log(u.uid,u.gid,u.username,u.homedir);\\\"; "
             "grep -E '^(NoNewPrivs|CapEff|CapBnd):' /proc/self/status; "
             "if cat /proc/$PPID/environ >/dev/null 2>&1; then echo parent-env-readable; "
             "else echo parent-env-protected; fi; "
@@ -65,6 +66,7 @@ def main():
     expected = [
         "10901",
         "10901",
+        "10901 10901 dos /workspaces/901/.home",
         "CapEff:\t0000000000000000",
         "CapBnd:\t0000000000000000",
         "NoNewPrivs:\t1",
