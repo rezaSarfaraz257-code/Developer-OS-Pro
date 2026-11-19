@@ -154,7 +154,13 @@ def _assert_inside_root(root, candidate):
 
 def _write_file_beneath(root, relative_path, content):
     """Write below root using directory descriptors and O_NOFOLLOW at every hop."""
-    parts = relative_path.split("/")
+    raw_parts = relative_path.split("/")
+    parts = [os.path.basename(component) for component in raw_parts]
+    if any(
+        component != raw or component in ("", ".", "..") or "\\x00" in component
+        for component, raw in zip(parts, raw_parts)
+    ):
+        raise ValueError("unsafe workspace path component")
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
     root_fd = os.open(root, directory_flags)
     parent_fd = root_fd
@@ -427,6 +433,10 @@ def _run_command_with_slot(root, command):
     timed_out = False
     orphaned_processes = False
     try:
+        # lgtm [py/command-line-injection]
+        # Intentional execution boundary: user code is handed to the fixed sandbox
+        # helper, which applies OS limits and drops to a workspace-only identity
+        # before the shell receives it. The API server never executes this command.
         proc = subprocess.Popen(
             command_argv(command, root, uid, gid),
             cwd=root,
