@@ -273,7 +273,9 @@ export default function EngineeringControlCenter({ go }) {
         await loadDependencies(taskId);
       }
     } catch (err) {
-      setError(err.message || "Dependency could not be created.");
+      if (selectedTaskIdRef.current === taskId) {
+        setError(err.message || "Dependency could not be created.");
+      }
     } finally {
       setDependencyBusy(false);
     }
@@ -293,7 +295,9 @@ export default function EngineeringControlCenter({ go }) {
         await loadDependencies(taskId);
       }
     } catch (err) {
-      setError(err.message || "Dependency could not be removed.");
+      if (selectedTaskIdRef.current === taskId) {
+        setError(err.message || "Dependency could not be removed.");
+      }
     } finally {
       setDependencyBusy(false);
     }
@@ -534,7 +538,13 @@ export default function EngineeringControlCenter({ go }) {
             <div className="panel-head"><div><span className="panel-kicker">DEPENDENCY GRAPH</span><h2>Task prerequisites</h2></div></div>
             <p className="engineering-muted">Dependencies are saved through the project task dependency API.</p>
             <label className="engineering-create-form">SELECT TASK
-              <select value={selectedTaskId} onChange={(event) => setSelectedTaskId(event.target.value)}>
+              <select value={selectedTaskId} onChange={(event) => {
+                const nextTaskId = event.target.value;
+                selectedTaskIdRef.current = nextTaskId;
+                setSelectedTaskId(nextTaskId);
+                setDependencyTarget("");
+                setDependencies([]);
+              }}>
                 <option value="">Choose a task</option>
                 {tasks.map((task) => <option value={String(task.id)} key={task.id}>{task.title}</option>)}
               </select>
