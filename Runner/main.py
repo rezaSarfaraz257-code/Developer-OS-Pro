@@ -176,14 +176,23 @@ def _write_file_beneath(root, relative_path, content):
     try:
         for component in parts[:-1]:
             try:
-                os.mkdir(component, mode=0o700, dir_fd=parent_fd)  # lgtm [py/path-injection]
+                # The single validated component is created relative to the already-open parent.
+
+            # codeql[py/path-injection]
+            os.mkdir(component, mode=0o700, dir_fd=parent_fd)
             except FileExistsError:
                 pass
-            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)  # lgtm [py/path-injection]
+            # O_NOFOLLOW and dir_fd confine traversal to the opened workspace directory.
+
+            # codeql[py/path-injection]
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
             opened_fds.append(next_fd)
             parent_fd = next_fd
         file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW
-        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)  # lgtm [py/path-injection]
+        # The final validated component is opened relative to the confined parent descriptor.
+
+        # codeql[py/path-injection]
+        file_fd = os.open(parts[-1], file_flags, 0o600, dir_fd=parent_fd)
         try:
             view = memoryview(content)
             while view:
