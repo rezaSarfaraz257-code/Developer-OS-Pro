@@ -61,7 +61,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         workspace = self.root / "44"
         workspace.mkdir()
         (workspace / "linked.txt").symlink_to(outside)
-        with self.assertRaises(OSError):
+        with self.assertRaises(ValueError):
             main.write_snapshot(workspace, {"linked.txt": "must not overwrite"})
         self.assertEqual(outside.read_text(encoding="utf-8"), "keep this content")
 
