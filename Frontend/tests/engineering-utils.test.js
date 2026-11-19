@@ -180,7 +180,7 @@ test("reconcileRecordSelection preserves valid selections and clears deleted rec
   assert.equal(reconcileRecordSelection(records, "1"), "1");
   assert.equal(reconcileRecordSelection(records, 99), "1");
   assert.equal(reconcileRecordSelection([], 99), "");
-  assert.equal(reconcileRecordSelection([{ name: "invalid id" }], 99), "undefined");
+  assert.equal(reconcileRecordSelection([{ name: "invalid id" }], 99), "");
 });
 
 test("reconcileProjectSelection preserves the all filter and resets deleted projects", () => {
