@@ -167,9 +167,11 @@ class WorkspaceBoundaryTests(unittest.TestCase):
 
     def test_command_is_passed_as_argument_not_bootstrap_interpolation(self):
         command = "printf '%s' '$(touch should-not-exist)'"
-        argv = main.command_argv(command, 10031, 10031)
+        workspace = self.root / "31"
+        workspace.mkdir()
+        argv = main.command_argv(command, workspace, 10031, 10031)
         self.assertEqual(argv[-1], command)
-        self.assertNotIn(command, argv[2])
+        self.assertNotIn(command, argv[1])
 
     def test_command_runs_as_unprivileged_identity_with_no_new_privileges(self):
         workspace = self.root / "14"
@@ -184,6 +186,19 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(status["NoNewPrivs"], "1")
         self.assertEqual(status["CapEff"], "0000000000000000")
         self.assertEqual(status["CapBnd"], "0000000000000000")
+
+    def test_landlock_blocks_other_workspace_even_when_dac_permissions_are_open(self):
+        with patch.object(main, "ROOT", self.root):
+            first = main.safe_workspace("51")
+            second = main.safe_workspace("52")
+        prepare_first = main.run_command(
+            first,
+            "chmod 755 . && printf 'private-workspace-data' > secret.txt && chmod 644 secret.txt",
+        )
+        self.assertEqual(prepare_first["exit_code"], 0, prepare_first["stderr"])
+        result = main.run_command(second, "cat ../51/secret.txt")
+        self.assertNotEqual(result["exit_code"], 0)
+        self.assertNotIn("private-workspace-data", result["stdout"])
 
     def test_command_cannot_read_runner_parent_environment(self):
         workspace = self.root / "16"
@@ -250,6 +265,14 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 429)
         self.assertEqual(error.exception.headers["Retry-After"], "0.01")
         execute.assert_not_called()
+
+    def test_readiness_requires_landlock_support(self):
+        with patch.object(main, "TOKEN", "test-token"):
+            with patch.object(main, "landlock_abi_version", return_value=0):
+                with patch.object(main, "ROOT", self.root):
+                    with self.assertRaises(HTTPException) as error:
+                        main.runner_readiness()
+        self.assertEqual(error.exception.status_code, 503)
 
     def test_readiness_requires_runner_token(self):
         with patch.object(main, "TOKEN", ""):
