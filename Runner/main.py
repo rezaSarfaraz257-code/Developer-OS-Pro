@@ -15,8 +15,12 @@ TIMEOUT = 120
 MAX_COMMAND_CPU_SECONDS = 125
 MAX_COMMAND_FILE_BYTES = 256 * 1024 * 1024
 MAX_COMMAND_OPEN_FILES = 256
+# Reserve a unique, unprivileged Linux identity for every numeric workspace ID.
+# Keeping the sum below INT32_MAX avoids platform-specific uid_t edge cases.
+WORKSPACE_UID_BASE = 10_000
+MAX_WORKSPACE_ID = 2_147_473_647
 
-def command_argv(command):
+def command_argv(command, uid, gid):
     # Apply inherited POSIX limits before launching user-controlled shell code.
     # Pass the command as an argv value, never interpolate it into the bootstrap.
     file_limit_blocks = MAX_COMMAND_FILE_BYTES // 1024
@@ -29,7 +33,7 @@ def command_argv(command):
         f"ulimit -S -n {MAX_COMMAND_OPEN_FILES}; "
         f"ulimit -H -n {MAX_COMMAND_OPEN_FILES}; "
         "ulimit -S -c 0; ulimit -H -c 0; "
-        'exec setpriv --reuid=65534 --regid=65534 --clear-groups '
+        f'exec setpriv --reuid={uid} --regid={gid} --clear-groups '
         '--bounding-set=-all --inh-caps=-all --ambient-caps=-all '
         '--no-new-privs -- bash -c "$1"'
     )
@@ -84,7 +88,7 @@ def safe_workspace(workspace_id):
     # Workspace identifiers are database IDs, not arbitrary path fragments.
     # Canonicalize them before deriving a filesystem path.
     raw_id = str(workspace_id)
-    if not re.fullmatch(r"[1-9][0-9]{0,17}", raw_id):
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", raw_id) or int(raw_id) > MAX_WORKSPACE_ID:
         raise HTTPException(status_code=400, detail="Invalid workspace id")
     canonical_id = str(int(raw_id))
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -259,11 +263,23 @@ def _terminate_remaining_process_group(proc):
     _kill_process_group(proc)
     return True
 
-def _prepare_workspace_for_execution(root):
-    # User code runs as a dedicated unprivileged identity, never as the API process.
-    # Make only this workspace accessible to that identity; never follow symlinks.
+def workspace_identity(root):
+    """Return the stable, unique unprivileged UID/GID assigned to a workspace."""
+    raw_id = Path(root).name
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", raw_id):
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    workspace_number = int(raw_id)
+    if workspace_number > MAX_WORKSPACE_ID:
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    identity = WORKSPACE_UID_BASE + workspace_number
+    return identity, identity
+
+
+def _prepare_workspace_for_execution(root, uid, gid):
+    # Each workspace gets its own stable UID/GID. A shared nobody identity would
+    # let one workspace process traverse every other workspace owned by nobody.
+    # Make only this workspace accessible to its identity; never follow symlinks.
     root = root.resolve()
-    uid = gid = 65534
     for current, directories, files in os.walk(root, topdown=True, followlinks=False):
         current_path = Path(current)
         safe_directories = []
@@ -290,7 +306,8 @@ def _run_command_with_slot(root, command):
     temp = root / ".tmp"
     home.mkdir(exist_ok=True)
     temp.mkdir(exist_ok=True)
-    _prepare_workspace_for_execution(root)
+    uid, gid = workspace_identity(root)
+    _prepare_workspace_for_execution(root, uid, gid)
     env = {
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": str(home),
@@ -313,7 +330,7 @@ def _run_command_with_slot(root, command):
     orphaned_processes = False
     try:
         proc = subprocess.Popen(
-            command_argv(command),
+            command_argv(command, uid, gid),
             cwd=root,
             env=env,
             stdout=subprocess.PIPE,
