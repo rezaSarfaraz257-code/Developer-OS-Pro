@@ -364,11 +364,11 @@ def _run_command_with_slot(root, command):
             else:
                 identity_file.unlink()
     passwd_text = (
-        "root:x:0:0:root:/root:/bin/bash\\n"
-        f"dos:x:{uid}:{gid}:Developer OS Workspace:{home}:/bin/bash\\n"
-        "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\\n"
+        "root:x:0:0:root:/root:/bin/bash\n"
+        f"dos:x:{uid}:{gid}:Developer OS Workspace:{home}:/bin/bash\n"
+        "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"
     )
-    group_text = f"root:x:0:\\ndos:x:{gid}:\\nnogroup:x:65534:\\n"
+    group_text = f"root:x:0:\ndos:x:{gid}:\nnogroup:x:65534:\n"
     _write_file_beneath(root, ".home/passwd", passwd_text.encode("utf-8"))
     _write_file_beneath(root, ".home/group", group_text.encode("utf-8"))
     _prepare_workspace_for_execution(root, uid, gid)
