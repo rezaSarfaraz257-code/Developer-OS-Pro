@@ -429,6 +429,8 @@ def runner_readiness():
             pass
     except HTTPException:
         raise
+    except subprocess.SubprocessError:
+        raise HTTPException(status_code=503, detail="Runner workspace ACL isolation is unavailable")
     except OSError:
         raise HTTPException(status_code=503, detail="Runner workspace storage is not writable")
     return {"status": "ready"}
