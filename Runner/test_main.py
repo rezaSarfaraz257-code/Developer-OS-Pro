@@ -202,13 +202,13 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(status["CapEff"], "0000000000000000")
         self.assertEqual(status["CapBnd"], "0000000000000000")
 
-    def test_landlock_blocks_other_workspace_even_when_dac_permissions_are_open(self):
+    def test_workspace_acl_blocks_cross_workspace_reads_even_when_file_is_world_readable(self):
         with patch.object(main, "ROOT", self.root):
             first = main.safe_workspace("51")
             second = main.safe_workspace("52")
         prepare_first = main.run_command(
             first,
-            "chmod 755 . && printf 'private-workspace-data' > secret.txt && chmod 644 secret.txt",
+            "printf 'private-workspace-data' > secret.txt && chmod 644 secret.txt",
         )
         self.assertEqual(prepare_first["exit_code"], 0, prepare_first["stderr"])
         result = main.run_command(second, "cat ../51/secret.txt")
@@ -244,9 +244,12 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         result = main.run_command(workspace, "echo generated > generated.txt && cat generated.txt")
         self.assertEqual(result["exit_code"], 0, result["stderr"])
         self.assertEqual(result["stdout"].strip(), "generated")
-        self.assertEqual((workspace / "generated.txt").stat().st_uid, 65534)
-        self.assertEqual(workspace.stat().st_uid, 65534)
-        self.assertEqual(workspace.stat().st_mode & 0o777, 0o700)
+        expected_uid, _ = main.workspace_identity(workspace)
+        self.assertEqual((workspace / "generated.txt").stat().st_uid, expected_uid)
+        self.assertEqual(workspace.stat().st_uid, 0)
+        self.assertEqual(workspace.stat().st_mode & 0o007, 0)
+        denied_chmod = main.run_command(workspace, "chmod 777 .")
+        self.assertNotEqual(denied_chmod["exit_code"], 0)
 
     def test_sync_cleanup_unlinks_symlinks_instead_of_following_them(self):
         workspace = self.root / "11"
@@ -281,12 +284,11 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(error.exception.headers["Retry-After"], "0.01")
         execute.assert_not_called()
 
-    def test_readiness_requires_landlock_support(self):
+    def test_readiness_requires_posix_acl_support(self):
         with patch.object(main, "TOKEN", "test-token"):
-            with patch.object(main, "landlock_abi_version", return_value=0):
-                with patch.object(main, "ROOT", self.root):
-                    with self.assertRaises(HTTPException) as error:
-                        main.runner_readiness()
+            with patch.object(main.shutil, "which", return_value=None):
+                with self.assertRaises(HTTPException) as error:
+                    main.runner_readiness()
         self.assertEqual(error.exception.status_code, 503)
 
     def test_readiness_requires_runner_token(self):
