@@ -44,9 +44,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Resolve compatible frontend security updates
+        working-directory: Frontend
+        run: npm audit fix --package-lock-only --ignore-scripts
       - name: Audit frontend lockfile
         working-directory: Frontend
         run: npm audit --audit-level=high
+      - name: Export updated frontend lockfile for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-lockfile-remediation
+          path: Frontend/package-lock.json
+          if-no-files-found: error
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
