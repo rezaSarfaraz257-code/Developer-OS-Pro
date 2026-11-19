@@ -4,7 +4,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m venv /opt/runner-venv && /opt/runner-venv/bin/pip install --no-cache-dir -r requirements.txt
 ENV PATH="/opt/runner-venv/bin:${PATH}"
-COPY main.py .
+COPY main.py sandbox_exec.py ./
 RUN mkdir -p /workspaces
 # API remains root only to drop UID/GID for untrusted commands. Compose grants
 # only the capabilities required for workspace ownership and privilege dropping;
