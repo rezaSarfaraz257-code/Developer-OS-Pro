@@ -6,6 +6,7 @@ UID/GID. The restrictions survive exec and cannot be relaxed by the command.
 import ctypes
 import ctypes.util
 import errno
+import glob
 import os
 import sys
 
@@ -97,6 +98,21 @@ def _add_path_rule(ruleset_fd, path, allowed_access):
         os.close(path_fd)
 
 
+def find_nss_wrapper_library():
+    """Resolve the distro NSS wrapper library even without an unversioned symlink."""
+    patterns = (
+        "/usr/lib/*/libnss_wrapper.so*",
+        "/lib/*/libnss_wrapper.so*",
+        "/usr/lib/libnss_wrapper.so*",
+        "/lib/libnss_wrapper.so*",
+    )
+    for pattern in patterns:
+        for candidate in sorted(glob.glob(pattern)):
+            if os.path.isfile(candidate):
+                return os.path.realpath(candidate)
+    return ctypes.util.find_library("nss_wrapper")
+
+
 def apply_workspace_landlock(workspace):
     """Allow full access only inside workspace and read/execute access to OS files."""
     try:
@@ -168,7 +184,7 @@ def main():
         command,
     ]
     env = os.environ.copy()
-    nss_wrapper = ctypes.util.find_library("nss_wrapper")
+    nss_wrapper = find_nss_wrapper_library()
     if not nss_wrapper:
         raise OSError(errno.ENOENT, "libnss_wrapper is required for isolated workspace identities")
     existing_preload = env.get("LD_PRELOAD", "")
