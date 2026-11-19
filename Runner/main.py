@@ -157,7 +157,7 @@ def _write_file_beneath(root, relative_path, content):
     raw_parts = relative_path.split("/")
     parts = [os.path.basename(component) for component in raw_parts]
     if any(
-        component != raw or component in ("", ".", "..") or "\\x00" in component
+        component != raw or component in ("", ".", "..") or "\x00" in component
         for component, raw in zip(parts, raw_parts)
     ):
         raise ValueError("unsafe workspace path component")
