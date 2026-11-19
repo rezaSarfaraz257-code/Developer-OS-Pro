@@ -38,6 +38,14 @@ def main():
         raise RuntimeError("RUNNER_SMOKE_TOKEN is required")
     wait_ready()
     request("/sync", {"workspace_id": "902", "files": {"secret.txt": "workspace-private-marker"}})
+    # Materialize workspace 902 under its own UID before checking isolation from 901.
+    initialized = request("/exec", {
+        "workspace_id": "902",
+        "files": {"secret.txt": "workspace-private-marker"},
+        "command": "test -f secret.txt",
+    })
+    if initialized.get("exit_code") != 0:
+        raise AssertionError(f"Sibling workspace initialization failed: {initialized}")
     result = request("/exec", {
         "workspace_id": "901",
         "files": {"main.py": "print('container-smoke-ok')"},
@@ -55,8 +63,8 @@ def main():
         raise AssertionError(f"Runner command failed: {result}")
     output = result.get("stdout", "").splitlines()
     expected = [
-        "65534",
-        "65534",
+        "10901",
+        "10901",
         "CapEff:\t0000000000000000",
         "CapBnd:\t0000000000000000",
         "NoNewPrivs:\t1",
