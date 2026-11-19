@@ -1758,13 +1758,13 @@ def task_dependencies_api(request, pk):
         if not _project_access(project, request.user):
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
-        try:
-            dependency_id = int(request.data.get("depends_on"))
-        except (TypeError, ValueError):
+        raw_dependency_id = request.data.get("depends_on")
+        if isinstance(raw_dependency_id, bool) or not str(raw_dependency_id).isdecimal():
             return Response(
                 {"error": "Dependencies must reference a task in the same project."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        dependency_id = int(raw_dependency_id)
         if dependency_id <= 0:
             return Response(
                 {"error": "Dependencies must reference a task in the same project."},
