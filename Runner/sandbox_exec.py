@@ -8,6 +8,7 @@ import ctypes.util
 import errno
 import glob
 import os
+import resource
 import sys
 
 SYS_LANDLOCK_CREATE_RULESET = 444
@@ -160,11 +161,26 @@ def apply_workspace_landlock(workspace):
         os.close(ruleset_fd)
 
 
+def apply_resource_limits():
+    """Bound CPU, file growth, descriptors, child processes and core dumps."""
+    limits = (
+        (resource.RLIMIT_CPU, (125, 126)),
+        (resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024)),
+        (resource.RLIMIT_NOFILE, (256, 256)),
+        (resource.RLIMIT_CORE, (0, 0)),
+    )
+    if hasattr(resource, "RLIMIT_NPROC"):
+        limits += ((resource.RLIMIT_NPROC, (64, 64)),)
+    for limit, values in limits:
+        resource.setrlimit(limit, values)
+
+
 def main():
     if len(sys.argv) != 5:
         raise SystemExit("sandbox launcher expects workspace, uid, gid and command")
     workspace, uid_text, gid_text, command = sys.argv[1:]
     uid, gid = int(uid_text), int(gid_text)
+    apply_resource_limits()
     apply_workspace_landlock(workspace)
 
     # Landlock is already enforced and survives this exec. setpriv drops every
