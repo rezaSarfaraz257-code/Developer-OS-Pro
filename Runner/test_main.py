@@ -72,10 +72,17 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             main.write_snapshot(workspace, {"linked.txt": "must not overwrite"})
         self.assertEqual(outside.read_text(encoding="utf-8"), "keep this content")
 
-    def test_write_snapshot_rejects_nul_and_nested_git_paths(self):
+    def test_write_snapshot_rejects_absolute_traversal_and_runtime_paths(self):
         workspace = self.root / "46"
         workspace.mkdir()
-        for unsafe_path in ("bad\x00name.py", "src/.git/config", ".home/passwd", ".tmp/output.log", "src/.npm-cache/cache", "src/.pip-cache/wheels"):
+        unsafe_paths = (
+            "bad\x00name.py", "src/.git/config", ".home/passwd", ".tmp/output.log",
+            ".npm-cache/cache", ".pip-cache/wheels", "node_modules/package/index.js",
+            ".venv/lib/site.py", "__pycache__/module.pyc", ".pytest_cache/state",
+            "/etc/passwd", "//server/share/file", "C:/Windows/system.ini",
+            "../outside.txt", "src/../../outside.txt", "src//empty.py",
+        )
+        for unsafe_path in unsafe_paths:
             with self.subTest(path=unsafe_path):
                 with self.assertRaises(ValueError):
                     main.write_snapshot(workspace, {unsafe_path: "blocked"})
