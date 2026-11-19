@@ -433,10 +433,8 @@ def _run_command_with_slot(root, command):
     timed_out = False
     orphaned_processes = False
     try:
-        # lgtm [py/command-line-injection]
-        # Intentional execution boundary: user code is handed to the fixed sandbox
-        # helper, which applies OS limits and drops to a workspace-only identity
-        # before the shell receives it. The API server never executes this command.
+        # The helper applies OS limits and drops privileges before bash reads
+        # the user script from stdin; the script is never placed in process argv.
         proc = subprocess.Popen(
             command_argv(root, uid, gid),
             cwd=root,
@@ -449,7 +447,7 @@ def _run_command_with_slot(root, command):
             bufsize=0,
         )
         try:
-            proc.stdin.write(command.encode("utf-8") + b"\\n")
+            proc.stdin.write(command.encode("utf-8"))
             proc.stdin.close()
         except BrokenPipeError:
             # The sandbox helper failed before exec; preserve its stderr/exit status.
