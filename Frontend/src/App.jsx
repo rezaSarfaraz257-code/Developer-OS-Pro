@@ -331,22 +331,22 @@ function IDE() {
       <div><span className="eyebrow">DEVELOPER OS / WEB IDE</span><h1>Command IDE</h1></div>
       <div className="ide-actions">
         <label className="ide-command"><span>RUN COMMAND</span><input value={command} onChange={event=>setCommand(event.target.value)} maxLength={2000} aria-label="Runner command" placeholder="python main.py" /></label>
-        <button onClick={create}>+ WORKSPACE</button>
-        <button onClick={addFile} disabled={!ws}>+ FILE</button>
+        <button onClick={create} disabled={saving||running}>+ WORKSPACE</button>
+        <button onClick={addFile} disabled={!ws||saving||running}>+ FILE</button>
         <button onClick={run} disabled={!ws||!command.trim()||running||saving}>{running?"RUNNING…":"▶ RUN"}</button>
         <button className="primary" onClick={save} disabled={!ws||saving||running}>{saving?"SAVING…":"SAVE ⌘S"}</button>
       </div>
     </div>
     <div className="ide-frame">
       <aside className="file-tree">
-        <div className="tree-head">EXPLORER <button onClick={addFile} disabled={!ws}>+</button></div>
-        {workspaces.map(workspace=><button className={`workspace-select ${ws?.id===workspace.id?"on":""}`} onClick={()=>{setWs(workspace);setActive(workspace.active_file||Object.keys(workspace.files||{})[0]||"");}} key={workspace.id}>◈ {workspace.name}</button>)}
+        <div className="tree-head">EXPLORER <button onClick={addFile} disabled={!ws||saving||running}>+</button></div>
+        {workspaces.map(workspace=><button className={`workspace-select ${ws?.id===workspace.id?"on":""}`} onClick={()=>{setWs(workspace);setActive(workspace.active_file||Object.keys(workspace.files||{})[0]||"");}} disabled={saving||running} key={workspace.id}>◈ {workspace.name}</button>)}
         {ws&&<div className="files">{Object.keys(ws.files||{}).map(file=><button className={active===file?"file-on":""} onClick={()=>setActive(file)} key={file}><span>{file.endsWith(".py")?"◉":file.endsWith(".md")?"▤":"□"}</span>{file}</button>)}</div>}
         {!workspaces.length&&<div className="tree-empty">Create a workspace to begin.</div>}
       </aside>
       <section className="editor-core">
         <div className="editor-tabs">{ws&&Object.keys(ws.files||{}).map(file=><button className={active===file?"editor-tab on":"editor-tab"} onClick={()=>setActive(file)} key={file}>{file}</button>)}</div>
-        {ws?<><div className="editor-meta"><span>● {active||"No file selected"}</span><span>{(code.match(/\n/g)||[]).length+1} lines</span><span>{ws.language||"Workspace"}</span></div><textarea className="code-editor" spellCheck="false" value={code} onChange={event=>updateCode(event.target.value)} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();save();}}}/></>:<div className="editor-empty"><div>⌘</div><h2>Web IDE ready</h2><p>Persistent workspaces, file explorer, editor and isolated runner integration.</p><button className="primary" onClick={create}>CREATE WORKSPACE</button></div>}
+        {ws?<><div className="editor-meta"><span>● {active||"No file selected"}</span><span>{(code.match(/\n/g)||[]).length+1} lines</span><span>{ws.language||"Workspace"}</span></div><textarea className="code-editor" spellCheck="false" disabled={saving||running} value={code} onChange={event=>updateCode(event.target.value)} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();save();}}}/></>:<div className="editor-empty"><div>⌘</div><h2>Web IDE ready</h2><p>Persistent workspaces, file explorer, editor and isolated runner integration.</p><button className="primary" onClick={create}>CREATE WORKSPACE</button></div>}
         <div className="terminal">
           <div className="terminal-head"><span>RUNNER OUTPUT · {running?"EXECUTING":saving?"SAVING":"READY"}</span><button onClick={()=>setTerminal([])}>CLEAR</button></div>
           {terminal.map((line,index)=><div key={index}>{line}</div>)}
