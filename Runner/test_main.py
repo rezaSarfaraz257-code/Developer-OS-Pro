@@ -230,6 +230,24 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 0, result["stderr"])
         self.assertEqual(result["stdout"].strip(), "protected")
 
+    def test_unique_workspace_identity_resolves_for_python_and_node(self):
+        workspace = self.root / "17"
+        workspace.mkdir()
+        python_result = main.run_command(
+            workspace,
+            "python3 -c 'import os,pwd; u=pwd.getpwuid(os.getuid()); print(u.pw_name, u.pw_dir)'",
+        )
+        self.assertEqual(python_result["exit_code"], 0, python_result["stderr"])
+        self.assertEqual(python_result["stdout"].strip(), f"dos {workspace / '.home'}")
+
+        node_result = main.run_command(
+            workspace,
+            "node -e \"const u=require('os').userInfo(); console.log(u.uid,u.gid,u.username,u.homedir)\"",
+        )
+        uid, gid = main.workspace_identity(workspace)
+        self.assertEqual(node_result["exit_code"], 0, node_result["stderr"])
+        self.assertEqual(node_result["stdout"].strip(), f"{uid} {gid} dos {workspace / '.home'}")
+
     def test_command_cannot_access_another_workspace(self):
         with patch.object(main, "ROOT", self.root):
             first = main.safe_workspace("31")
