@@ -9,6 +9,8 @@ import {
   taskStateLabel,
   isValidDateOnly,
   parseEngineeringDate,
+  reconcileRecordSelection,
+  reconcileProjectSelection,
 } from "../src/features/engineering/engineeringUtils.js";
 
 const tasks = [
@@ -169,4 +171,22 @@ test("getEngineeringInsights safely handles empty and paginated API payloads", (
     activeProjects: 0,
     configuredWorkspaces: 1,
   });
+});
+
+
+test("reconcileRecordSelection preserves valid selections and clears deleted records", () => {
+  const records = [{ id: 1 }, { id: 2 }];
+  assert.equal(reconcileRecordSelection(records, 2), "2");
+  assert.equal(reconcileRecordSelection(records, "1"), "1");
+  assert.equal(reconcileRecordSelection(records, 99), "1");
+  assert.equal(reconcileRecordSelection([], 99), "");
+  assert.equal(reconcileRecordSelection([{ name: "invalid id" }], 99), "undefined");
+});
+
+test("reconcileProjectSelection preserves the all filter and resets deleted projects", () => {
+  const projects = [{ id: 10 }, { id: 20 }];
+  assert.equal(reconcileProjectSelection(projects, "all"), "all");
+  assert.equal(reconcileProjectSelection(projects, 20), "20");
+  assert.equal(reconcileProjectSelection(projects, "999"), "all");
+  assert.equal(reconcileProjectSelection([], "10"), "all");
 });
