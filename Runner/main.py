@@ -176,10 +176,10 @@ def _write_file_beneath(root, relative_path, content):
     try:
         for component in parts[:-1]:
             try:
-                # The single validated component is created relative to the already-open parent.
+                # The validated component is created relative to the opened parent.
 
-            # codeql[py/path-injection]
-            os.mkdir(component, mode=0o700, dir_fd=parent_fd)
+                # codeql[py/path-injection]
+                os.mkdir(component, mode=0o700, dir_fd=parent_fd)
             except FileExistsError:
                 pass
             # O_NOFOLLOW and dir_fd confine traversal to the opened workspace directory.
