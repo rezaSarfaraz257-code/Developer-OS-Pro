@@ -372,8 +372,22 @@ def _run_command_with_slot(root, command):
     _write_file_beneath(root, ".home/passwd", passwd_text.encode("utf-8"))
     _write_file_beneath(root, ".home/group", group_text.encode("utf-8"))
     _prepare_workspace_for_execution(root, uid, gid)
+    runtime_paths = [
+        "/opt/runner-venv/bin",
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]
+    for executable in ("python", "python3", "node", "npm"):
+        resolved = shutil.which(executable)
+        if resolved:
+            runtime_paths.insert(0, str(Path(resolved).parent))
+    runtime_paths = list(dict.fromkeys(runtime_paths))
     env = {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": os.pathsep.join(runtime_paths),
         "HOME": str(home),
         "USER": "dos",
         "LOGNAME": "dos",
