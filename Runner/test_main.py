@@ -68,7 +68,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
     def test_write_snapshot_rejects_nul_and_nested_git_paths(self):
         workspace = self.root / "46"
         workspace.mkdir()
-        for unsafe_path in ("bad\\x00name.py", "src/.git/config"):
+        for unsafe_path in ("bad\x00name.py", "src/.git/config"):
             with self.subTest(path=unsafe_path):
                 with self.assertRaises(ValueError):
                     main.write_snapshot(workspace, {unsafe_path: "blocked"})
@@ -78,7 +78,7 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         workspace = self.root / "47"
         workspace.mkdir()
         with self.assertRaises(ValueError):
-            main.write_snapshot(workspace, {"source.py": "\\ud800"})
+            main.write_snapshot(workspace, {"source.py": "\ud800"})
 
     def test_write_snapshot_creates_nested_files_without_following_links(self):
         workspace = self.root / "45"
