@@ -134,13 +134,21 @@ def safe_workspace(workspace_id):
         raise HTTPException(status_code=400, detail="Workspace path is not available")
 
 def safe_rel(path):
-    path = str(path).replace("\\", "/").lstrip("/")
+    # Accept workspace-relative POSIX paths only. Reject absolute, drive-prefixed,
+    # traversal and runtime-owned directories before any filesystem operation.
+    path = str(path).replace("\\", "/")
     parts = path.split("/")
+    reserved = {
+        ".git", ".home", ".tmp", ".npm-cache", ".pip-cache",
+        "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
+    }
     if (
         not path
         or len(path) > 500
+        or path.startswith("/")
+        or re.match(r"^[A-Za-z]:", path)
         or "\x00" in path
-        or any(part in (".", "..", "", ".git", ".home", ".tmp", ".npm-cache", ".pip-cache") for part in parts)
+        or any(part in ("", ".", "..") or part in reserved for part in parts)
     ):
         raise ValueError("unsafe path")
     return path
