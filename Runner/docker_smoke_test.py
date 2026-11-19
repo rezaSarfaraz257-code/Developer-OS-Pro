@@ -51,7 +51,7 @@ def main():
         "files": {"main.py": "print('container-smoke-ok')"},
         "command": (
             "id -u; id -g; "
-            "node -e \\\"const u=require('os').userInfo(); console.log(u.uid,u.gid,u.username,u.homedir);\\\"; "
+            "node -e 'const u=require(\"os\").userInfo(); console.log(u.uid,u.gid,u.username,u.homedir)'; "
             "grep -E '^(NoNewPrivs|CapEff|CapBnd):' /proc/self/status; "
             "if cat /proc/$PPID/environ >/dev/null 2>&1; then echo parent-env-readable; "
             "else echo parent-env-protected; fi; "
