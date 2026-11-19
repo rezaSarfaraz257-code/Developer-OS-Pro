@@ -42,7 +42,7 @@ def main():
     initialized = request("/exec", {
         "workspace_id": "902",
         "files": {"secret.txt": "workspace-private-marker"},
-        "command": "test -f secret.txt",
+        "command": "chmod 755 . && chmod 644 secret.txt && test -f secret.txt",
     })
     if initialized.get("exit_code") != 0:
         raise AssertionError(f"Sibling workspace initialization failed: {initialized}")
