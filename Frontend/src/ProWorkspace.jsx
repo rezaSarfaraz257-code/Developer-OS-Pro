@@ -41,7 +41,6 @@ export default function ProWorkspace({ profile, onLogout, onNavigate }) {
   const [projectForm, setProjectForm] = useState(emptyProject);
   const [taskForm, setTaskForm] = useState(emptyTask);
   const [noteForm, setNoteForm] = useState({ title: "", content: "" });
-  const [editor, setEditor] = useState({ title: "main.py", language: "py", code: "# Start building\n\n" });
   const [tab, setTab] = useState("overview");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -145,11 +144,6 @@ export default function ProWorkspace({ profile, onLogout, onNavigate }) {
 
   async function connectGitHub() {
     try { const response = await apiFetch("/github/authorize/"); const data = await response.json(); if (data.authorization_url) window.location.href = data.authorization_url; else setMessage(data.error || "GitHub integration is not configured."); } catch (e) { setMessage(e.message); }
-  }
-
-  async function saveSnippet() {
-    if (!editor.title.trim() || !editor.code.trim()) return;
-    try { const response = await apiFetch("/snippets/", { method: "POST", body: JSON.stringify({ ...editor, project: selectedProject?.id || null }) }); const saved = await response.json(); setSnippets((x) => [saved, ...x]); setMessage("Snippet saved"); } catch (e) { setMessage(e.message); }
   }
 
   const insight = blocked ? `${blocked} blocked task${blocked > 1 ? "s" : ""} need attention.` : urgent ? `${urgent} urgent item${urgent > 1 ? "s" : ""} should be cleared next.` : completion >= 70 ? "Execution is moving well. Protect the current focus." : active ? "Create a small next milestone and keep the board moving." : "Create your first task to start measuring delivery.";

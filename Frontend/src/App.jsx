@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import EngineeringControlCenter from "./features/engineering/EngineeringControlCenter.jsx";
 import { API_URL, apiFetch, clearAuth, getAccessToken, revokeRefreshToken } from "./services/api";
 
 const nav = [
   ["dashboard", "⌂", "Command Center"],
+  ["engineering", "⌁", "Engineering OS"],
   ["projects", "◈", "Projects"],
   ["ide", "⌘", "Web IDE"],
   ["ai", "✦", "Intelligence"],
@@ -74,13 +76,13 @@ function Shell({ user, onLogout, children, go, current }) {
           <span className="brand-mark">D</span><span className="brand-text">DEVELOPER<span>OS</span></span>
         </button>
         <div className="rail-section">WORKSPACE</div>
-        {nav.slice(0, 6).map(([id, icon, label]) => (
+        {nav.slice(0, 7).map(([id, icon, label]) => (
           <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(id === "dashboard" ? "/" : `/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
         ))}
         <div className="rail-section">SYSTEM</div>
-        {nav.slice(6).map(([id, icon, label]) => (
+        {nav.slice(7).map(([id, icon, label]) => (
           <button key={id} className={`rail-item ${current === id ? "active" : ""}`} onClick={() => go(`/${id}`)}>
             <span>{icon}</span><em>{label}</em>
           </button>
@@ -232,20 +234,126 @@ function Collab({projectId}) {
 }
 
 function IDE() {
-  const [workspaces,setWorkspaces]=useState([]); const [ws,setWs]=useState(null); const [active,setActive]=useState("main.py"); const [terminal,setTerminal]=useState(["Developer OS Web IDE v1.0","Ready. Workspace runtime is local to your browser + API."]); const [saving,setSaving]=useState(false);
-  const load=()=>apiFetch("/ide/workspaces/").then(r=>r.json()).then(d=>{setWorkspaces(d);if(d[0]){setWs(d[0]);setActive(d[0].active_file||Object.keys(d[0].files||{})[0]);}});
+  const [workspaces,setWorkspaces]=useState([]);
+  const [ws,setWs]=useState(null);
+  const [active,setActive]=useState("main.py");
+  const [terminal,setTerminal]=useState(["Developer OS Web IDE","Ready. Files are saved to your account workspace; execution uses the configured isolated runner."]);
+  const [saving,setSaving]=useState(false);
+  const [running,setRunning]=useState(false);
+  const [command,setCommand]=useState("python main.py");
+
+  const load=()=>apiFetch("/ide/workspaces/").then(r=>r.json()).then(d=>{
+    setWorkspaces(d);
+    if(d[0]){
+      setWs(d[0]);
+      setActive(d[0].active_file||Object.keys(d[0].files||{})[0]||"");
+    }
+  });
   useEffect(load,[]);
-  const create=async()=>{const r=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify({name:`Workspace ${workspaces.length+1}`})});const d=await r.json();setWorkspaces([d,...workspaces]);setWs(d);setActive(d.active_file);};
-  const save=async()=>{if(!ws)return;setSaving(true);const r=await apiFetch("/ide/workspaces/",{method:"PATCH",body:JSON.stringify({id:ws.id,files:ws.files,active_file:active})});setWs(await r.json());setSaving(false);setTerminal(t=>[...t,`✓ Saved ${active} at ${new Date().toLocaleTimeString()}`]);};
+
+  const create=async()=>{
+    const r=await apiFetch("/ide/workspaces/",{method:"POST",body:JSON.stringify({name:`Workspace ${workspaces.length+1}`})});
+    const d=await r.json();
+    setWorkspaces(current=>[d,...current]);
+    setWs(d);
+    setActive(d.active_file||Object.keys(d.files||{})[0]||"");
+    setTerminal(current=>[...current,`Created workspace ${d.name} (#${d.id}).`]);
+  };
+
+  const persistWorkspace=async({notify=true}={})=>{
+    if(!ws) return null;
+    setSaving(true);
+    try{
+      const r=await apiFetch("/ide/workspaces/",{method:"PATCH",body:JSON.stringify({id:ws.id,files:ws.files,active_file:active})});
+      const saved=await r.json();
+      setWs(saved);
+      setWorkspaces(current=>current.map(item=>item.id===saved.id?saved:item));
+      if(notify) setTerminal(current=>[...current,`✓ Saved ${active} at ${new Date().toLocaleTimeString()}`]);
+      return saved;
+    }finally{
+      setSaving(false);
+    }
+  };
+
+  const save=async()=>{
+    try{await persistWorkspace();}
+    catch(error){setTerminal(current=>[...current,`[SAVE ERROR] ${error.message}`]);}
+  };
+
   const code=ws?.files?.[active]??"";
-  const updateCode=(value)=>setWs({...ws,files:{...ws.files,[active]:value}});
-  const run=()=>{setTerminal(t=>[...t,`$ run ${active}`,`✓ Execution sandbox queued. Connect a runner/worker to execute untrusted code server-side.`]);};
-  const addFile=()=>{const n=prompt("File name","app.py");if(n){setWs({...ws,files:{...ws.files,[n]:""}});setActive(n);}};
-  return <div className="ide-page"><div className="ide-top"><div><span className="eyebrow">DEVELOPER OS / WEB IDE</span><h1>Command IDE</h1></div><div className="ide-actions"><button onClick={create}>+ WORKSPACE</button><button onClick={addFile} disabled={!ws}>+ FILE</button><button onClick={run} disabled={!ws}>▶ RUN</button><button className="primary" onClick={save} disabled={!ws}>{saving?"SAVING":"SAVE ⌘S"}</button></div></div>
+  const updateCode=(value)=>setWs(current=>current?({...current,files:{...current.files,[active]:value}}):current);
+
+  const run=async()=>{
+    const requestedCommand=command.trim();
+    if(!ws||!requestedCommand||running) return;
+    setRunning(true);
+    setTerminal(current=>[...current,`$ ${requestedCommand}`]);
+    try{
+      // Persist the exact editor buffer before the runner receives the workspace snapshot.
+      const saved=await persistWorkspace({notify:false});
+      const response=await apiFetch(`/ide/workspaces/${saved.id}/execute/`,{
+        method:"POST",
+        body:JSON.stringify({command:requestedCommand}),
+      });
+      const result=await response.json();
+      const status=String(result.status||"unknown").toUpperCase();
+      setTerminal(current=>[
+        ...current,
+        `[${status}] exit code: ${result.exit_code??"not returned"} · ${result.duration_ms??"—"} ms`,
+        ...(result.stdout?String(result.stdout).replace(/\r\n/g,"\n").split("\n"):[]),
+        ...(result.stderr?String(result.stderr).replace(/\r\n/g,"\n").split("\n"):[]),
+      ]);
+    }catch(error){
+      setTerminal(current=>[...current,`[EXECUTION ERROR] ${error.message||"Runner request failed."}`]);
+    }finally{
+      setRunning(false);
+    }
+  };
+
+  const addFile=()=>{
+    const name=window.prompt("File name","app.py");
+    if(!name) return;
+    const normalized=name.trim().replace(/\\/g,"/");
+    if(!normalized||normalized.startsWith("/")||normalized.split("/").some(part=>!part||part==="."||part==="..")){
+      setTerminal(current=>[...current,"[FILE ERROR] Enter a safe relative file path."]);
+      return;
+    }
+    if(Object.prototype.hasOwnProperty.call(ws?.files||{},normalized)){
+      setTerminal(current=>[...current,`[FILE ERROR] ${normalized} already exists.`]);
+      return;
+    }
+    setWs(current=>current?({...current,files:{...current.files,[normalized]:""}}):current);
+    setActive(normalized);
+  };
+
+  return <div className="ide-page">
+    <div className="ide-top">
+      <div><span className="eyebrow">DEVELOPER OS / WEB IDE</span><h1>Command IDE</h1></div>
+      <div className="ide-actions">
+        <label className="ide-command"><span>RUN COMMAND</span><input value={command} onChange={event=>setCommand(event.target.value)} maxLength={2000} aria-label="Runner command" placeholder="python main.py" /></label>
+        <button onClick={create} disabled={saving||running}>+ WORKSPACE</button>
+        <button onClick={addFile} disabled={!ws||saving||running}>+ FILE</button>
+        <button onClick={run} disabled={!ws||!command.trim()||running||saving}>{running?"RUNNING…":"▶ RUN"}</button>
+        <button className="primary" onClick={save} disabled={!ws||saving||running}>{saving?"SAVING…":"SAVE ⌘S"}</button>
+      </div>
+    </div>
     <div className="ide-frame">
-      <aside className="file-tree"><div className="tree-head">EXPLORER <button onClick={addFile}>+</button></div>{workspaces.map(w=><button className={`workspace-select ${ws?.id===w.id?"on":""}`} onClick={()=>{setWs(w);setActive(w.active_file||Object.keys(w.files)[0])}} key={w.id}>◈ {w.name}</button>)}{ws&&<div className="files">{Object.keys(ws.files||{}).map(f=><button className={active===f?"file-on":""} onClick={()=>setActive(f)} key={f}><span>{f.endsWith(".py")?"◉":f.endsWith(".md")?"▤":"□"}</span>{f}</button>)}</div>}{!workspaces.length&&<div className="tree-empty">Create a workspace to begin.</div>}</aside>
-      <section className="editor-core"><div className="editor-tabs">{ws&&Object.keys(ws.files||{}).map(f=><button className={active===f?"editor-tab on": "editor-tab"} onClick={()=>setActive(f)} key={f}>{f} <span>×</span></button>)}</div>{ws?<><div className="editor-meta"><span>● {active}</span><span>{(code.match(/\n/g)||[]).length+1} lines</span><span>{ws.language}</span></div><textarea className="code-editor" spellCheck="false" value={code} onChange={e=>updateCode(e.target.value)} onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==="s"){e.preventDefault();save();}}}/></>:<div className="editor-empty"><div>⌘</div><h2>Web IDE ready</h2><p>Persistent workspaces, file tree, editor, terminal and project context.</p><button className="primary" onClick={create}>CREATE WORKSPACE</button></div>}<div className="terminal"><div className="terminal-head"><span>TERMINAL</span><button onClick={()=>setTerminal([])}>CLEAR</button></div>{terminal.map((x,i)=><div key={i}>{x}</div>)}</div></section>
-    </div></div>;
+      <aside className="file-tree">
+        <div className="tree-head">EXPLORER <button onClick={addFile} disabled={!ws||saving||running}>+</button></div>
+        {workspaces.map(workspace=><button className={`workspace-select ${ws?.id===workspace.id?"on":""}`} onClick={()=>{setWs(workspace);setActive(workspace.active_file||Object.keys(workspace.files||{})[0]||"");}} disabled={saving||running} key={workspace.id}>◈ {workspace.name}</button>)}
+        {ws&&<div className="files">{Object.keys(ws.files||{}).map(file=><button className={active===file?"file-on":""} onClick={()=>setActive(file)} key={file}><span>{file.endsWith(".py")?"◉":file.endsWith(".md")?"▤":"□"}</span>{file}</button>)}</div>}
+        {!workspaces.length&&<div className="tree-empty">Create a workspace to begin.</div>}
+      </aside>
+      <section className="editor-core">
+        <div className="editor-tabs">{ws&&Object.keys(ws.files||{}).map(file=><button className={active===file?"editor-tab on":"editor-tab"} onClick={()=>setActive(file)} key={file}>{file}</button>)}</div>
+        {ws?<><div className="editor-meta"><span>● {active||"No file selected"}</span><span>{(code.match(/\n/g)||[]).length+1} lines</span><span>{ws.language||"Workspace"}</span></div><textarea className="code-editor" spellCheck="false" disabled={saving||running} value={code} onChange={event=>updateCode(event.target.value)} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();save();}}}/></>:<div className="editor-empty"><div>⌘</div><h2>Web IDE ready</h2><p>Persistent workspaces, file explorer, editor and isolated runner integration.</p><button className="primary" onClick={create}>CREATE WORKSPACE</button></div>}
+        <div className="terminal">
+          <div className="terminal-head"><span>RUNNER OUTPUT · {running?"EXECUTING":saving?"SAVING":"READY"}</span><button onClick={()=>setTerminal([])}>CLEAR</button></div>
+          {terminal.map((line,index)=><div key={index}>{line}</div>)}
+        </div>
+      </section>
+    </div>
+  </div>;
 }
 
 function AI() {
@@ -309,6 +417,7 @@ export default function App() {
   if(projectMatch) content=<ProjectDetail id={projectMatch[1]} go={go}/>;
   else if(current==="dashboard") content=<Dashboard go={go}/>;
   else if(current==="projects") content=<Projects go={go}/>;
+  else if(current==="engineering") content=<EngineeringControlCenter go={go}/>;
   else if(current==="ide") content=<IDE/>;
   else if(current==="ai") content=<AI/>;
   else if(current==="search") content=<SearchPage/>;

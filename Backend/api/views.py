@@ -102,6 +102,16 @@ if frontend_url_parts.scheme not in {"http", "https"} or not frontend_url_parts.
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_TIMEOUT = (3.05, 15)
 
+def github_oauth_config():
+    """Resolve OAuth settings at request time so Django overrides and runtime config agree."""
+    return {
+        "client_id": getattr(settings, "GITHUB_CLIENT_ID", None) or GITHUB_CLIENT_ID,
+        "client_secret": getattr(settings, "GITHUB_CLIENT_SECRET", None) or GITHUB_CLIENT_SECRET,
+        "redirect_uri": getattr(settings, "GITHUB_OAUTH_REDIRECT", None) or GITHUB_OAUTH_REDIRECT,
+        "scope": getattr(settings, "GITHUB_OAUTH_SCOPE", None) or GITHUB_OAUTH_SCOPE,
+    }
+
+
 
 def github_service_unavailable():
     return Response(
@@ -850,8 +860,9 @@ def snippet_detail_api(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def github_authorize(request):
+    oauth_config = github_oauth_config()
 
-    if not GITHUB_CLIENT_ID:
+    if not oauth_config["client_id"]:
         return Response(
             {
                 "error": "GITHUB_CLIENT_ID is not configured."
@@ -859,7 +870,7 @@ def github_authorize(request):
             status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
 
-    if not GITHUB_CLIENT_SECRET:
+    if not oauth_config["client_secret"]:
         return Response(
             {
                 "error": "GITHUB_CLIENT_SECRET is not configured."
@@ -889,9 +900,9 @@ def github_authorize(request):
     )
 
     github_url = "https://github.com/login/oauth/authorize?" + urlencode({
-        "client_id": GITHUB_CLIENT_ID,
-        "redirect_uri": GITHUB_OAUTH_REDIRECT,
-        "scope": GITHUB_OAUTH_SCOPE,
+        "client_id": oauth_config["client_id"],
+        "redirect_uri": oauth_config["redirect_uri"],
+        "scope": oauth_config["scope"],
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
@@ -911,6 +922,7 @@ def github_authorize(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def github_callback(request):
+    oauth_config = github_oauth_config()
 
     code = request.query_params.get("code")
     state = request.query_params.get("state")
@@ -947,10 +959,10 @@ def github_callback(request):
         token_response = requests.post(
             "https://github.com/login/oauth/access_token",
             data={
-                "client_id": GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
+                "client_id": oauth_config["client_id"],
+                "client_secret": oauth_config["client_secret"],
                 "code": code,
-                "redirect_uri": GITHUB_OAUTH_REDIRECT,
+                "redirect_uri": oauth_config["redirect_uri"],
                 "code_verifier": oauth_state.code_verifier,
             },
             headers={"Accept": "application/json"},
@@ -1701,22 +1713,92 @@ def comments_api(request):
     return Response(CommentSerializer(c).data, status=201)
 
 
+def _dependency_would_create_cycle(task_id, prerequisite_id):
+    """Return True when prerequisite_id already depends (directly or indirectly) on task_id."""
+    frontier = {prerequisite_id}
+    visited = set()
+    while frontier:
+        if task_id in frontier:
+            return True
+        visited.update(frontier)
+        next_frontier = set(
+            TaskDependency.objects.filter(task_id__in=frontier)
+            .exclude(depends_on_id__in=visited)
+            .values_list("depends_on_id", flat=True)
+        )
+        frontier = next_frontier
+    return False
+
+
 @api_view(["GET", "POST", "DELETE"])
 @permission_classes([IsAuthenticated])
 def task_dependencies_api(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    if not task.project or not _project_access(task.project, request.user): return Response({"error":"Forbidden"}, status=403)
+    if not task.project or not _project_access(task.project, request.user):
+        return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == "GET":
-        deps = TaskDependency.objects.filter(task=task)
+        deps = TaskDependency.objects.filter(task=task).select_related("depends_on")
         return Response(TaskDependencySerializer(deps, many=True).data)
+
     if request.method == "DELETE":
-        dep = get_object_or_404(TaskDependency, pk=request.data.get("dependency_id"), task=task)
-        dep.delete(); return Response(status=204)
-    dep_task = get_object_or_404(Task, pk=request.data.get("depends_on"))
-    if dep_task == task: return Response({"error":"A task cannot depend on itself."}, status=400)
-    if dep_task.project_id != task.project_id: return Response({"error":"Dependencies must stay inside the project."}, status=400)
-    dep, _ = TaskDependency.objects.get_or_create(task=task, depends_on=dep_task)
-    return Response(TaskDependencySerializer(dep).data, status=201)
+        dep = get_object_or_404(
+            TaskDependency,
+            pk=request.data.get("dependency_id"),
+            task=task,
+        )
+        dep.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # Serialize dependency writes per project. This prevents two simultaneous
+    # requests from independently adding opposite edges and creating a cycle.
+    with transaction.atomic():
+        project = get_object_or_404(Project.objects.select_for_update(), pk=task.project_id)
+        task = get_object_or_404(Task.objects.select_for_update(), pk=pk, project=project)
+        if not _project_access(project, request.user):
+            return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        raw_dependency_id = request.data.get("depends_on")
+        if isinstance(raw_dependency_id, bool) or not str(raw_dependency_id).isdecimal():
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        dependency_id = int(raw_dependency_id)
+        if dependency_id <= 0:
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Filter by the already-authorized project so callers cannot probe
+        # whether task IDs from another user's project exist.
+        dep_task = Task.objects.select_for_update().filter(
+            pk=dependency_id,
+            project=project,
+        ).first()
+        if dep_task is None:
+            return Response(
+                {"error": "Dependencies must reference a task in the same project."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if dep_task == task:
+            return Response({"error": "A task cannot depend on itself."}, status=status.HTTP_400_BAD_REQUEST)
+        if dep_task.project_id != task.project_id:
+            return Response({"error": "Dependencies must stay inside the project."}, status=status.HTTP_400_BAD_REQUEST)
+        if _dependency_would_create_cycle(task.id, dep_task.id):
+            return Response(
+                {"error": "This prerequisite would create a dependency cycle. Choose a task that does not depend on this task."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dependency, created = TaskDependency.objects.get_or_create(
+            task=task,
+            depends_on=dep_task,
+        )
+        return Response(
+            TaskDependencySerializer(dependency).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 @api_view(["GET", "POST", "PATCH"])

@@ -149,6 +149,7 @@ export default function ProIDE({ projectId, message }) {
         <select value={framework} onChange={e=>setFramework(e.target.value)}>{frameworks.map(f=><option key={f.id} value={f.id}>{f.label}</option>)}</select>
         <button onClick={install}>Install framework</button>
         <button onClick={newFile}>＋ File</button>
+        <button onClick={renameFile} disabled={!ws || !active}>Rename</button>
         <button onClick={saveFile} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
         <button className="primary" onClick={()=>setShowTerminal(x=>!x)}>Terminal</button>
       </div>

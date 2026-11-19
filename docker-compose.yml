@@ -36,7 +36,10 @@ services:
       IDE_RUNNER_URL: ${IDE_RUNNER_URL:-http://runner:8080}
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
     healthcheck:
-      test: ["CMD-SHELL", "python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=3)' >/dev/null 2>&1"]
+      test:
+        - CMD-SHELL
+        - >-
+          python manage.py shell -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health/ready/", timeout=3)' >/dev/null 2>&1
       interval: 15s
       timeout: 5s
       retries: 5
@@ -53,9 +56,14 @@ services:
 
   runner:
     restart: unless-stopped
+    init: true
+    read_only: true
     build: ./Runner
     environment:
       IDE_RUNNER_TOKEN: ${IDE_RUNNER_TOKEN:?Set IDE_RUNNER_TOKEN in .env}
+      PYTHONDONTWRITEBYTECODE: "1"
+    tmpfs:
+      - /tmp:rw,nosuid,size=128m
     volumes:
       - ide_workspaces:/workspaces
     expose:
@@ -64,11 +72,18 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETPCAP
+      - SETUID
+      - SETGID
     pids_limit: 256
     mem_limit: 1g
     cpus: 2.0
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5

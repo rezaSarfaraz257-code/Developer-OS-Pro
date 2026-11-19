@@ -1,5 +1,12 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master ]
@@ -13,14 +20,16 @@ jobs:
       run:
         working-directory: ./Frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: Frontend/package-lock.json
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   backend-check:
@@ -29,11 +38,62 @@ jobs:
       run:
         working-directory: ./Backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
       - run: python manage.py check --deploy
       - run: python manage.py test
+
+  runner-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y acl libnss-wrapper
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r Runner/requirements.txt
+      - run: sudo env "PATH=$PATH" "$(command -v python)" -m unittest discover -s Runner -p 'test_*.py' -v
+
+  deployment-config:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-key-for-compose-validation-not-used-in-deployment
+      POSTGRES_PASSWORD: ci-only-password
+      IDE_RUNNER_TOKEN: ci-only-runner-token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker compose config --quiet
+      - run: docker build -t developeros-runner:ci ./Runner
+      - name: Verify Runner isolation inside its Docker container
+        env:
+          RUNNER_SMOKE_URL: http://127.0.0.1:18080
+          RUNNER_SMOKE_TOKEN: ci-runner-smoke-token
+        run: |
+          docker volume create runner-smoke-workspaces
+          docker run -d --name runner-smoke \
+            --read-only --init \
+            --tmpfs /tmp:rw,nosuid,size=128m \
+            --mount source=runner-smoke-workspaces,target=/workspaces \
+            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETPCAP \
+            --cap-add SETUID --cap-add SETGID \
+            --security-opt no-new-privileges:true \
+            --pids-limit 256 --memory 1g --cpus 2 \
+            -e IDE_RUNNER_TOKEN=ci-runner-smoke-token \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -p 127.0.0.1:18080:8080 developeros-runner:ci
+          trap 'docker logs runner-smoke 2>&1 || true; docker rm -f runner-smoke >/dev/null 2>&1 || true; docker volume rm runner-smoke-workspaces >/dev/null 2>&1 || true' EXIT
+          python Runner/docker_smoke_test.py

@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import GitHubAccount, Project, Tag, Tool, Task
+from .models import GitHubAccount, GitHubOAuthState, Project, Tag, Tool, Task, TaskDependency
 
 
 class ProjectApiSecurityTests(APITestCase):
@@ -349,3 +349,80 @@ class PlatformUpgradeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(response.data["key"].startswith("dos_live_"))
         self.assertNotIn("key_hash", response.data["record"])
+
+
+class TaskDependencyGraphTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="dependency-owner", password="long-test-password-123")
+        self.project = Project.objects.create(owner=self.user, title="Dependency graph")
+        self.first = Task.objects.create(project=self.project, title="First")
+        self.second = Task.objects.create(project=self.project, title="Second")
+        self.third = Task.objects.create(project=self.project, title="Third")
+        self.client.force_authenticate(user=self.user)
+
+    def add_dependency(self, task, prerequisite):
+        return self.client.post(
+            f"/api/tasks/{task.id}/dependencies/",
+            {"depends_on": prerequisite.id},
+            format="json",
+        )
+
+    def test_rejects_direct_and_transitive_dependency_cycles(self):
+        self.assertEqual(self.add_dependency(self.first, self.second).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self.add_dependency(self.second, self.third).status_code, status.HTTP_201_CREATED)
+
+        direct_cycle = self.add_dependency(self.second, self.first)
+        self.assertEqual(direct_cycle.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cycle", direct_cycle.data["error"].lower())
+
+        transitive_cycle = self.add_dependency(self.third, self.first)
+        self.assertEqual(transitive_cycle.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cycle", transitive_cycle.data["error"].lower())
+
+    def test_dependency_creation_is_idempotent(self):
+        first = self.add_dependency(self.first, self.second)
+        duplicate = self.add_dependency(self.first, self.second)
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(duplicate.status_code, status.HTTP_200_OK)
+        self.assertEqual(TaskDependency.objects.filter(task=self.first).count(), 1)
+
+    def test_rejects_cross_project_dependencies(self):
+        other_project = Project.objects.create(owner=self.user, title="Other project")
+        other_task = Task.objects.create(project=other_project, title="External prerequisite")
+
+        response = self.add_dependency(self.first, other_task)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(TaskDependency.objects.filter(task=self.first).exists())
+
+    def test_dependency_id_rejects_boolean_and_float_values(self):
+        for invalid in (True, 1.5):
+            with self.subTest(value=invalid):
+                response = self.client.post(
+                    f"/api/tasks/{self.first.id}/dependencies/",
+                    {"depends_on": invalid},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(TaskDependency.objects.filter(task=self.first).exists())
+
+    def test_unknown_dependency_id_does_not_reveal_task_existence(self):
+        response = self.client.post(
+            f"/api/tasks/{self.first.id}/dependencies/",
+            {"depends_on": 999999999},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("same project", response.data["error"].lower())
+        self.assertFalse(TaskDependency.objects.filter(task=self.first).exists())
+
+    def test_dependency_reads_return_saved_records(self):
+        self.assertEqual(self.add_dependency(self.first, self.second).status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(f"/api/tasks/{self.first.id}/dependencies/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["depends_on"], self.second.id)
