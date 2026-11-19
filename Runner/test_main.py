@@ -12,6 +12,7 @@ import main
 class WorkspaceBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        os.chmod(self.temp.name, 0o755)
         self.root = Path(self.temp.name) / "workspaces"
         self.root.mkdir()
         self.addCleanup(self.temp.cleanup)
