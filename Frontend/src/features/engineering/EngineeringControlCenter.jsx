@@ -11,6 +11,7 @@ import {
   reconcileRecordSelection,
   reconcileProjectSelection,
   taskStateLabel,
+  nextEngineeringPollDelay,
   TASK_STATES,
 } from "./engineeringUtils.js";
 
@@ -45,6 +46,8 @@ export default function EngineeringControlCenter({ go }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [syncState, setSyncState] = useState("connecting");
+  const consecutiveFailuresRef = useRef(0);
   const loadControllerRef = useRef(null);
   const dependencyControllerRef = useRef(null);
 
@@ -83,31 +86,74 @@ export default function EngineeringControlCenter({ go }) {
       setLoading(true);
       setError("");
     }
+
+    const resources = [
+      ["projects", "/projects/", setProjects],
+      ["tasks", "/tasks/", setTasks],
+      ["activity", "/activity/", (value) => setActivity(normalizeApiList(value))],
+      ["workspaces", "/ide/workspaces/", setWorkspaces],
+    ];
+
     try {
-      const [projectData, taskData, activityData, workspaceData] = await Promise.all([
-        apiJson("/projects/", { signal: controller.signal }),
-        apiJson("/tasks/", { signal: controller.signal }),
-        apiJson("/activity/", { signal: controller.signal }),
-        apiJson("/ide/workspaces/", { signal: controller.signal }),
-      ]);
-      if (controller.signal.aborted) return;
-      const nextProjects = normalizeApiList(projectData);
-      const nextTasks = normalizeApiList(taskData);
-      const nextWorkspaces = normalizeApiList(workspaceData);
-      setProjects(nextProjects);
-      setTasks(nextTasks);
-      setActivity(normalizeApiList(activityData));
-      setWorkspaces(nextWorkspaces);
-      setLastUpdated(new Date());
-      // Reconcile selections against the authoritative server snapshot.
-      // Deleted records must never leave stale IDs wired to subsequent actions.
-      setWorkspaceId((current) => reconcileRecordSelection(nextWorkspaces, current));
-      setSelectedTaskId((current) => reconcileRecordSelection(nextTasks, current));
-      setProjectId((current) => reconcileProjectSelection(nextProjects, current));
+      const results = await Promise.allSettled(
+        resources.map(([, path]) => apiJson(path, { signal: controller.signal })),
+      );
+      if (controller.signal.aborted) return null;
+
+      let successful = 0;
+      const failures = [];
+      results.forEach((result, index) => {
+        const [label, , setter] = resources[index];
+        if (result.status === "fulfilled") {
+          successful += 1;
+          if (label === "projects" || label === "tasks" || label === "workspaces") {
+            setter(normalizeApiList(result.value));
+          } else {
+            setter(result.value);
+          }
+        } else {
+          failures.push({ label, reason: result.reason });
+        }
+      });
+
+      if (successful > 0) {
+        setLastUpdated(new Date());
+        if (results[0].status === "fulfilled") {
+          const nextProjects = normalizeApiList(results[0].value);
+          setProjectId((current) => reconcileProjectSelection(nextProjects, current));
+        }
+        if (results[1].status === "fulfilled") {
+          const nextTasks = normalizeApiList(results[1].value);
+          selectedTaskIdRef.current = reconcileRecordSelection(nextTasks, selectedTaskIdRef.current);
+          setSelectedTaskId((current) => reconcileRecordSelection(nextTasks, current));
+        }
+        if (results[3].status === "fulfilled") {
+          const nextWorkspaces = normalizeApiList(results[3].value);
+          setWorkspaceId((current) => reconcileRecordSelection(nextWorkspaces, current));
+        }
+      }
+
+      if (failures.length) {
+        consecutiveFailuresRef.current = Math.min(consecutiveFailuresRef.current + 1, 10);
+        setSyncState(successful > 0 ? "degraded" : "offline");
+        const detail = failures
+          .map(({ label, reason }) => `${label}: ${reason?.message || "request failed"}`)
+          .join(" · ");
+        setError(successful > 0 ? `Partial API sync — ${detail}` : `API unavailable — ${detail}`);
+      } else {
+        consecutiveFailuresRef.current = 0;
+        setSyncState("online");
+        setError("");
+      }
+
+      return { successful, failed: failures.length };
     } catch (err) {
       if (err.name !== "AbortError" && !controller.signal.aborted) {
+        consecutiveFailuresRef.current = Math.min(consecutiveFailuresRef.current + 1, 10);
+        setSyncState("offline");
         setError(err.message || "Unable to load workspace data from the API.");
       }
+      return null;
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);
@@ -134,7 +180,7 @@ export default function EngineeringControlCenter({ go }) {
         timer = window.setTimeout(() => {
           timer = null;
           void refresh();
-        }, 20000);
+        }, nextEngineeringPollDelay(consecutiveFailuresRef.current));
       }
     };
 
@@ -386,10 +432,10 @@ export default function EngineeringControlCenter({ go }) {
           <h1>Engineering OS</h1>
           <p>Operate project work, dependencies, contextual intelligence and real runner executions.</p>
         </div>
-        <div className="engineering-sync">
+        <div className={`engineering-sync sync-${syncState}`} role="status" aria-live="polite">
           <span className="engineering-live-dot" />
-          API POLLING
-          <small>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Waiting for API"}</small>
+          {syncState === "online" ? "API CONNECTED" : syncState === "degraded" ? "PARTIAL SYNC" : syncState === "offline" ? "API UNAVAILABLE" : "CONNECTING"}
+          <small>{lastUpdated ? `Last API response ${lastUpdated.toLocaleTimeString()}` : "Waiting for API response"}</small>
           <button className="ghost" onClick={() => load()} type="button" disabled={loading || refreshing}>
             {refreshing ? "SYNCING..." : "REFRESH"}
           </button>
