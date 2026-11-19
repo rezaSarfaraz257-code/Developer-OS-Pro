@@ -16,6 +16,12 @@ class WorkspaceBoundaryTests(unittest.TestCase):
         self.root.mkdir()
         self.addCleanup(self.temp.cleanup)
 
+    def test_workspace_parent_is_root_owned_and_not_writable_by_commands(self):
+        with patch.object(main, "ROOT", self.root):
+            root = main._secure_workspace_root()
+        self.assertEqual(root.stat().st_uid, 0)
+        self.assertEqual(root.stat().st_mode & 0o777, 0o755)
+
     def test_workspace_is_private_from_creation(self):
         with patch.object(main, "ROOT", self.root):
             workspace = main.safe_workspace("21")
