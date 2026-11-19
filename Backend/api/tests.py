@@ -396,6 +396,17 @@ class TaskDependencyGraphTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(TaskDependency.objects.filter(task=self.first).exists())
 
+    def test_unknown_dependency_id_does_not_reveal_task_existence(self):
+        response = self.client.post(
+            f"/api/tasks/{self.first.id}/dependencies/",
+            {"depends_on": 999999999},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("same project", response.data["error"].lower())
+        self.assertFalse(TaskDependency.objects.filter(task=self.first).exists())
+
     def test_dependency_reads_return_saved_records(self):
         self.assertEqual(self.add_dependency(self.first, self.second).status_code, status.HTTP_201_CREATED)
 
