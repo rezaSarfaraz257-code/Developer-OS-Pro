@@ -135,3 +135,11 @@ body{overflow-x:hidden}button{color:inherit}.os-shell{min-height:100vh;display:f
   .ide-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
   .ide-actions button{min-width:0}
 }
+
+/* Honest engineering API health states. */
+.engineering-sync.sync-degraded{color:var(--amber)}
+.engineering-sync.sync-offline{color:#ff8798}
+.engineering-sync.sync-connecting{color:var(--muted)}
+.sync-degraded .engineering-live-dot{background:var(--amber);box-shadow:0 0 8px rgba(245,196,107,.35)}
+.sync-offline .engineering-live-dot{background:#ff8798;box-shadow:none}
+.sync-connecting .engineering-live-dot{background:var(--muted);box-shadow:none}
