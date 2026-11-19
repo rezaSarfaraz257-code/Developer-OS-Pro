@@ -55,6 +55,25 @@ class WorkspaceBoundaryTests(unittest.TestCase):
             main.write_snapshot(workspace, {"linked/pwned.txt": "must not be written"})
         self.assertFalse((outside / "pwned.txt").exists())
 
+    def test_write_snapshot_rejects_symlinked_file_target(self):
+        outside = Path(self.temp.name) / "outside-file.txt"
+        outside.write_text("keep this content", encoding="utf-8")
+        workspace = self.root / "44"
+        workspace.mkdir()
+        (workspace / "linked.txt").symlink_to(outside)
+        with self.assertRaises(OSError):
+            main.write_snapshot(workspace, {"linked.txt": "must not overwrite"})
+        self.assertEqual(outside.read_text(encoding="utf-8"), "keep this content")
+
+    def test_write_snapshot_creates_nested_files_without_following_links(self):
+        workspace = self.root / "45"
+        workspace.mkdir()
+        main.write_snapshot(workspace, {"src/nested/app.py": "print('safe')"})
+        self.assertEqual(
+            (workspace / "src" / "nested" / "app.py").read_text(encoding="utf-8"),
+            "print('safe')",
+        )
+
     def test_snapshot_rejects_too_many_source_files_instead_of_truncating(self):
         workspace = self.root / "17"
         workspace.mkdir()
