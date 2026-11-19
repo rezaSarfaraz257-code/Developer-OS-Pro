@@ -4,6 +4,7 @@ The launcher installs filesystem rules before dropping to the workspace-specific
 UID/GID. The restrictions survive exec and cannot be relaxed by the command.
 """
 import ctypes
+import ctypes.util
 import errno
 import os
 import sys
@@ -166,7 +167,13 @@ def main():
         "-c",
         command,
     ]
-    os.execvpe("setpriv", argv, os.environ.copy())
+    env = os.environ.copy()
+    nss_wrapper = ctypes.util.find_library("nss_wrapper")
+    if not nss_wrapper:
+        raise OSError(errno.ENOENT, "libnss_wrapper is required for isolated workspace identities")
+    existing_preload = env.get("LD_PRELOAD", "")
+    env["LD_PRELOAD"] = f"{existing_preload}:{nss_wrapper}" if existing_preload else nss_wrapper
+    os.execvpe("setpriv", argv, env)
 
 
 if __name__ == "__main__":
